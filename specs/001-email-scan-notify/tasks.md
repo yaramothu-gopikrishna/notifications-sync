@@ -309,3 +309,265 @@ T065, T066, T067, T068
 - No test tasks included per user request
 - Commit after each task or logical group
 - Stop at any checkpoint to validate the story independently
+
+---
+
+## How It Works — End-to-End Usage Flow
+
+### Architecture Overview
+
+```
+┌──────────────┐     ┌───────────────────────────────────┐     ┌──────────────┐
+│   User's     │     │   Email Scan & Notify Service      │     │  Notification │
+│   Gmail      │◄───►│                                   │────►│  Channels     │
+│   Inbox      │     │  ┌─────────┐  ┌──────────────┐   │     │               │
+└──────────────┘     │  │Scheduler│─►│Email Scanner  │   │     │  ┌─────────┐  │
+                     │  │(60s)    │  │(Gmail API)    │   │     │  │  Slack  │  │
+┌──────────────┐     │  └─────────┘  └──────┬───────┘   │     │  └─────────┘  │
+│  PostgreSQL  │◄───►│                      │           │     │               │
+│  (Users,     │     │  ┌───────────┐  ┌────▼────────┐  │     │  ┌─────────┐  │
+│   Accounts,  │     │  │Dedup      │◄─┤Notification │──┼────►│  │WhatsApp │  │
+│   Channels)  │     │  │(Redis SET)│  │Dispatcher   │  │     │  └─────────┘  │
+└──────────────┘     │  └───────────┘  └─────────────┘  │     └──────────────┘
+                     │                                   │
+┌──────────────┐     │  ┌────────────────────────────┐  │
+│    Redis     │◄───►│  │  Resilience4j              │  │
+│  (Dedup,     │     │  │  Circuit Breaker + Rate     │  │
+│   Caching)   │     │  │  Limiter on all ext. calls  │  │
+└──────────────┘     │  └────────────────────────────┘  │
+                     └───────────────────────────────────┘
+```
+
+### Step-by-Step Usage Flow
+
+#### Step 1 — Register & Login
+
+```bash
+# 1a. Create an account
+curl -s -X POST http://localhost:8080/api/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email": "you@example.com", "password": "MySecurePass123!"}' | jq
+
+# Response: { "accessToken": "eyJ...", "refreshToken": "eyJ...", "expiresIn": 900 }
+
+# 1b. Save the token for all subsequent requests
+export TOKEN="<accessToken-from-response>"
+
+# 1c. (Later) Login again if token expires
+curl -s -X POST http://localhost:8080/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email": "you@example.com", "password": "MySecurePass123!"}' | jq
+
+# 1d. Refresh token when access token expires (every 15 min)
+curl -s -X POST http://localhost:8080/api/v1/auth/refresh \
+  -H "Content-Type: application/json" \
+  -d '{"refreshToken": "<your-refresh-token>"}' | jq
+```
+
+#### Step 2 — Connect Gmail Account (OAuth2)
+
+**Prerequisites**: Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `application-dev.yml`
+(from Google Cloud Console → APIs & Services → Credentials → OAuth 2.0 Client ID).
+Add `http://localhost:8080/api/v1/email-accounts/callback` as Authorized Redirect URI.
+
+```bash
+# 2a. Initiate Gmail OAuth2 connection
+curl -s -X POST http://localhost:8080/api/v1/email-accounts/connect \
+  -H "Authorization: Bearer $TOKEN" | jq
+
+# Response: { "authorizationUrl": "https://accounts.google.com/o/oauth2/v2/auth?..." }
+
+# 2b. Open the authorizationUrl in your browser
+#     → Log in with your Google account
+#     → Grant "View your email messages" permission
+#     → Google redirects to /callback → account is now ACTIVE
+
+# 2c. Verify your connected accounts
+curl -s http://localhost:8080/api/v1/email-accounts \
+  -H "Authorization: Bearer $TOKEN" | jq
+
+# Response: [{ "id": "uuid", "emailAddress": "you@gmail.com", "status": "active", ... }]
+```
+
+**What happens behind the scenes**:
+1. Server generates Google OAuth2 consent URL with `gmail.readonly` scope
+2. User authorizes → Google sends auth code to `/callback`
+3. Server exchanges auth code for access+refresh tokens
+4. Tokens are encrypted (AES-256-GCM) and stored in PostgreSQL
+5. Account status set to `active` → scheduler starts scanning
+
+#### Step 3 — Add Notification Channel (Slack / WhatsApp / Both)
+
+```bash
+# 3a. Add Slack channel
+curl -s -X POST http://localhost:8080/api/v1/notification-channels \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "channelType": "slack",
+    "botToken": "xoxb-your-slack-bot-token",
+    "slackChannelId": "C0123456789"
+  }' | jq
+
+# 3b. Add WhatsApp channel
+curl -s -X POST http://localhost:8080/api/v1/notification-channels \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "channelType": "whatsapp",
+    "whatsappPhoneNumber": "+1234567890",
+    "consentGiven": true
+  }' | jq
+
+# 3c. List your channels
+curl -s http://localhost:8080/api/v1/notification-channels \
+  -H "Authorization: Bearer $TOKEN" | jq
+```
+
+**Where to get credentials**:
+- **Slack**: Create app at https://api.slack.com/apps → OAuth & Permissions → Bot Token (`xoxb-...`)
+- **WhatsApp**: Sign up at https://www.twilio.com → WhatsApp Sandbox → get SID + Auth Token
+
+#### Step 4 — Automatic Scanning & Notifications (Happens Automatically!)
+
+Once Steps 2 & 3 are complete, the system runs automatically:
+
+```
+Every 60 seconds:
+  ┌────────────────────────────────────────────────────────┐
+  │ EmailScanScheduler runs                                │
+  │  ├─ Finds all ACTIVE email accounts                    │
+  │  ├─ For each account:                                  │
+  │  │   ├─ Calls Gmail API (history.list since last scan) │
+  │  │   │   └─ Protected by @CircuitBreaker("gmail")      │
+  │  │   │   └─ Protected by @RateLimiter("gmail-api")     │
+  │  │   ├─ For each new email found:                      │
+  │  │   │   ├─ Dedup check (Redis SET, 48h TTL)           │
+  │  │   │   ├─ Filter check (matches sender/subject?)     │
+  │  │   │   └─ If passes → NotificationDispatcher         │
+  │  │   └─ Updates lastScannedAt + historyId              │
+  │  └─ Flushes any batch windows (10+ emails → summary)   │
+  │                                                        │
+  │ NotificationDispatcher:                                │
+  │  ├─ Finds user's active channels                       │
+  │  ├─ For each channel:                                  │
+  │  │   ├─ SlackNotificationSender.send()                 │
+  │  │   │   └─ @CircuitBreaker("slack")                   │
+  │  │   │   └─ @RateLimiter("slack-api") → 1 msg/sec     │
+  │  │   └─ WhatsAppNotificationSender.send()              │
+  │  │       └─ @CircuitBreaker("whatsapp")                │
+  │  │       └─ @RateLimiter("whatsapp-api") → 50/sec     │
+  │  └─ Saves Notification record (status: sent/failed)    │
+  │                                                        │
+  │ Failed notifications → RetryScheduler:                 │
+  │  └─ Exponential backoff: 30s × 2^retryCount (max 3)   │
+  └────────────────────────────────────────────────────────┘
+```
+
+**Notification message format** (sent to Slack/WhatsApp):
+```
+📧 New Email
+From: John Smith <john@company.com>
+Subject: Q4 Budget Review
+Preview: Hi team, please find attached the Q4 budget review document for...
+```
+
+#### Step 5 — (Optional) Set Up Filter Rules
+
+Only get notified for emails that matter:
+
+```bash
+# 5a. Filter: Only notify for emails from your boss
+curl -s -X POST http://localhost:8080/api/v1/filter-rules \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "ruleType": "sender",
+    "pattern": "boss@company.com",
+    "active": true,
+    "priority": 1
+  }' | jq
+
+# 5b. Filter: Only notify for "urgent" subject lines
+curl -s -X POST http://localhost:8080/api/v1/filter-rules \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "ruleType": "subject_keyword",
+    "pattern": "urgent",
+    "active": true,
+    "priority": 2
+  }' | jq
+
+# 5c. List your filter rules
+curl -s http://localhost:8080/api/v1/filter-rules \
+  -H "Authorization: Bearer $TOKEN" | jq
+```
+
+**Filter behavior**: If you have ANY active filter rules, only matching emails trigger notifications. If you have NO filter rules, ALL new emails trigger notifications.
+
+#### Step 6 — (Optional) Pause / Resume Scanning
+
+```bash
+# Get your email account ID first
+export ACCOUNT_ID="<id-from-step-2c>"
+
+# Pause (e.g., going on vacation)
+curl -s -X PATCH http://localhost:8080/api/v1/email-accounts/$ACCOUNT_ID/pause \
+  -H "Authorization: Bearer $TOKEN" | jq
+
+# Resume
+curl -s -X PATCH http://localhost:8080/api/v1/email-accounts/$ACCOUNT_ID/resume \
+  -H "Authorization: Bearer $TOKEN" | jq
+```
+
+#### Step 7 — View Notification History
+
+```bash
+curl -s "http://localhost:8080/api/v1/notifications?page=0&size=20" \
+  -H "Authorization: Bearer $TOKEN" | jq
+```
+
+### API Quick Reference
+
+| Method | Endpoint | Auth? | Description |
+|--------|----------|-------|-------------|
+| POST | `/api/v1/auth/register` | No | Create account |
+| POST | `/api/v1/auth/login` | No | Login, get JWT |
+| POST | `/api/v1/auth/refresh` | No | Refresh JWT |
+| POST | `/api/v1/email-accounts/connect` | Yes | Start Gmail OAuth2 |
+| GET | `/api/v1/email-accounts/callback` | No | OAuth2 callback (auto) |
+| GET | `/api/v1/email-accounts` | Yes | List email accounts |
+| GET | `/api/v1/email-accounts/{id}` | Yes | Get account details |
+| PATCH | `/api/v1/email-accounts/{id}/pause` | Yes | Pause scanning |
+| PATCH | `/api/v1/email-accounts/{id}/resume` | Yes | Resume scanning |
+| DELETE | `/api/v1/email-accounts/{id}` | Yes | Disconnect account |
+| POST | `/api/v1/notification-channels` | Yes | Add Slack/WhatsApp |
+| GET | `/api/v1/notification-channels` | Yes | List channels |
+| PATCH | `/api/v1/notification-channels/{id}` | Yes | Update channel |
+| DELETE | `/api/v1/notification-channels/{id}` | Yes | Remove channel |
+| POST | `/api/v1/filter-rules` | Yes | Create filter rule |
+| GET | `/api/v1/filter-rules` | Yes | List filter rules |
+| PUT | `/api/v1/filter-rules/{id}` | Yes | Update filter rule |
+| DELETE | `/api/v1/filter-rules/{id}` | Yes | Delete filter rule |
+| GET | `/api/v1/notifications` | Yes | Notification history |
+| GET | `/actuator/health` | No | Health check |
+| GET | `/swagger-ui/index.html` | No | Swagger UI (interactive) |
+
+### Resilience Patterns Summary
+
+| External API | Circuit Breaker | Rate Limiter | Retry |
+|-------------|----------------|-------------|-------|
+| Gmail API | Window=20, 50% fail, 60s wait | 200 req/sec | On scan failure |
+| Slack API | Window=15, 50% fail, 20s wait | 1 msg/sec | 3× exponential backoff |
+| WhatsApp (Twilio) | Window=20, 50% fail, 45s wait | 50 req/sec | 3× exponential backoff |
+
+### Required External Setup
+
+| Service | What You Need | Where To Get It |
+|---------|---------------|-----------------|
+| **Google Cloud** | OAuth2 Client ID + Secret | [console.cloud.google.com](https://console.cloud.google.com) → APIs & Services → Credentials |
+| **Gmail API** | Enable API | Google Cloud Console → Library → Gmail API → Enable |
+| **Slack** | Bot Token (`xoxb-...`) | [api.slack.com/apps](https://api.slack.com/apps) → Create App → OAuth |
+| **Twilio** | Account SID + Auth Token | [twilio.com/console](https://www.twilio.com/console) |
+| **WhatsApp** | Twilio WhatsApp Sandbox | Twilio Console → Messaging → WhatsApp |
