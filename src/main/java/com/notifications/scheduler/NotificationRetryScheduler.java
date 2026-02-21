@@ -23,7 +23,7 @@ public class NotificationRetryScheduler {
     @Scheduled(fixedDelay = 30000)
     public void retryFailedNotifications() {
         List<Notification> failed = notificationRepository
-                .findByDeliveryStatusAndRetryCountLessThan("failed", (short) 3);
+                .findFailedWithChannel("failed", (short) 3);
 
         for (Notification notification : failed) {
             // Exponential backoff: only retry if enough time has passed

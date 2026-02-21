@@ -3,7 +3,7 @@ server:
 
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5432/notifications_dev
+    url: jdbc:postgresql://localhost:5433/notifications_dev
     username: ${DB_USERNAME:postgres}
     password: ${DB_PASSWORD:postgres}
     hikari:
@@ -34,8 +34,8 @@ app:
 
 gmail:
   oauth2:
-    client-id: ${GOOGLE_CLIENT_ID:}
-    client-secret: ${GOOGLE_CLIENT_SECRET:}
+    client-id: ${GOOGLE_CLIENT_ID:861584990566-hv8e1qdp8j14a5ks1v2q1ijo1rat3pdc.apps.googleusercontent.com}
+    client-secret: ${GOOGLE_CLIENT_SECRET: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}
     redirect-uri: http://localhost:8080/api/v1/email-accounts/callback
     scopes: https://www.googleapis.com/auth/gmail.readonly
     auth-uri: https://accounts.google.com/o/oauth2/v2/auth
@@ -47,8 +47,8 @@ slack:
   bot-token: ${SLACK_BOT_TOKEN:}
 
 twilio:
-  account-sid: ${TWILIO_ACCOUNT_SID:}
-  auth-token: ${TWILIO_AUTH_TOKEN:}
+  account-sid: ${TWILIO_ACCOUNT_SID:AC9cb4452f1464ebc0ccea568fd563a799}
+  auth-token: ${TWILIO_AUTH_TOKEN:8d24c7525a1451e279b88441e2f678a2}
   whatsapp:
     from-number: ${TWILIO_WHATSAPP_FROM:whatsapp:+14155238886}
 

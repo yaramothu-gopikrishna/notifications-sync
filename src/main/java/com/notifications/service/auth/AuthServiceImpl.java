@@ -13,6 +13,10 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.UUID;
+
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -65,6 +69,36 @@ public class AuthServiceImpl implements AuthService {
                 .refreshToken(jwtTokenProvider.generateRefreshToken(userId))
                 .expiresIn(900)
                 .build();
+    }
+
+    @Override
+    @Transactional
+    public void forgotPassword(String email) {
+        userRepository.findByEmail(email).ifPresent(user -> {
+            String token = UUID.randomUUID().toString();
+            user.setPasswordResetToken(token);
+            user.setPasswordResetExpiresAt(Instant.now().plus(1, ChronoUnit.HOURS));
+            userRepository.save(user);
+            log.info("Password reset requested for {}. Token: {}", email, token);
+        });
+        // Always succeed (don't reveal whether email exists)
+    }
+
+    @Override
+    @Transactional
+    public void resetPassword(String token, String newPassword) {
+        User user = userRepository.findByPasswordResetToken(token)
+                .orElseThrow(() -> new BadCredentialsException("Invalid or expired reset token"));
+
+        if (user.getPasswordResetExpiresAt() == null || Instant.now().isAfter(user.getPasswordResetExpiresAt())) {
+            throw new BadCredentialsException("Reset token has expired");
+        }
+
+        user.setPasswordHash(passwordEncoder.encode(newPassword));
+        user.setPasswordResetToken(null);
+        user.setPasswordResetExpiresAt(null);
+        userRepository.save(user);
+        log.info("Password reset completed for {}", user.getEmail());
     }
 
     private AuthTokenResponse buildTokenResponse(User user) {

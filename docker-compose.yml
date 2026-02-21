@@ -43,8 +43,8 @@ services:
       REDIS_PORT: 6379
       JWT_SECRET: change-me-in-production-at-least-256-bits-long-secret
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
-      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
-      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_CLIENT_ID: 861584990566-hv8e1qdp8j14a5ks1v2q1ijo1rat3pdc.apps.googleusercontent.com
+      GOOGLE_CLIENT_SECRET: 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
       SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-}
       TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
       TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}

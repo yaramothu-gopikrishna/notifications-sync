@@ -5,6 +5,7 @@ import StatusBadge from '../components/StatusBadge';
 import EmptyState from '../components/EmptyState';
 import LoadingSpinner from '../components/LoadingSpinner';
 import toast from 'react-hot-toast';
+import { getErrorMessage } from '../utils/errorUtils';
 
 export default function NotificationsPage() {
   const [notifications, setNotifications] = useState([]);
@@ -17,7 +18,7 @@ export default function NotificationsPage() {
       const { data } = await listNotifications(page, pageSize);
       setNotifications(Array.isArray(data) ? data : []);
     } catch {
-      toast.error('Failed to load notifications');
+      toast.error(getErrorMessage(err));
     } finally {
       setLoading(false);
     }

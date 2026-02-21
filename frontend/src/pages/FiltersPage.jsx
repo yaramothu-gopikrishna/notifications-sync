@@ -6,6 +6,7 @@ import EmptyState from '../components/EmptyState';
 import LoadingSpinner from '../components/LoadingSpinner';
 import Modal from '../components/Modal';
 import toast from 'react-hot-toast';
+import { getErrorMessage } from '../utils/errorUtils';
 
 export default function FiltersPage() {
   const [rules, setRules] = useState([]);
@@ -18,7 +19,7 @@ export default function FiltersPage() {
       const { data } = await listRules();
       setRules(Array.isArray(data) ? data : []);
     } catch {
-      toast.error('Failed to load filter rules');
+      toast.error(getErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -35,7 +36,7 @@ export default function FiltersPage() {
       setForm({ ruleType: 'sender', pattern: '', active: true, priority: 0 });
       fetchRules();
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to create rule');
+      toast.error(getErrorMessage(err));
     }
   };
 
@@ -44,7 +45,7 @@ export default function FiltersPage() {
       await updateRule(rule.id, { ...rule, active: !rule.active });
       fetchRules();
     } catch {
-      toast.error('Failed to update rule');
+      toast.error(getErrorMessage(err));
     }
   };
 
@@ -55,7 +56,7 @@ export default function FiltersPage() {
       toast.success('Rule deleted');
       fetchRules();
     } catch {
-      toast.error('Failed to delete');
+      toast.error(getErrorMessage(err));
     }
   };
 

@@ -1,7 +1,7 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
-  LayoutDashboard, Mail, Bell, MessageSquare, Filter, LogOut
+  LayoutDashboard, Mail, Bell, MessageSquare, Filter, LogOut, User
 } from 'lucide-react';
 
 const links = [
@@ -13,7 +13,7 @@ const links = [
 ];
 
 export default function Sidebar() {
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
   const navigate = useNavigate();
 
   const handleLogout = () => {
@@ -50,7 +50,26 @@ export default function Sidebar() {
         ))}
       </nav>
 
-      <div className="p-3 border-t border-gray-700">
+      <div className="p-3 border-t border-gray-700 space-y-2">
+        {user && (
+          <NavLink
+            to="/profile"
+            className={({ isActive }) =>
+              `flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+                isActive
+                  ? 'bg-indigo-600 text-white'
+                  : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+              }`
+            }
+          >
+            {user.gravatarUrl ? (
+              <img src={user.gravatarUrl} alt="" className="w-5 h-5 rounded-full" />
+            ) : (
+              <User size={18} />
+            )}
+            <span className="truncate">{user.email || 'Profile'}</span>
+          </NavLink>
+        )}
         <button
           onClick={handleLogout}
           className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-gray-300 hover:bg-gray-800 hover:text-white w-full cursor-pointer"

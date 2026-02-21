@@ -36,7 +36,7 @@ public class EmailScannerServiceImpl implements EmailScannerService {
     @CircuitBreaker(name = "gmail", fallbackMethod = "scanFallback")
     @RateLimiter(name = "gmail-api")
     public void scanAccount(EmailAccount account) {
-        log.debug("Scanning email account: {}", account.getEmailAddress());
+        log.info("Scanning email account: {}", account.getEmailAddress());
 
         try {
             Gmail gmail = gmailClientService.getGmailService(account.getAccessToken());

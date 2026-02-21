@@ -1,24 +1,26 @@
 import { useState, useEffect } from 'react';
 import { MessageSquare, Plus, Trash2, Pencil } from 'lucide-react';
-import { listChannels, createChannel, deleteChannel } from '../api/channels';
+import { listChannels, createChannel, updateChannel, deleteChannel } from '../api/channels';
 import StatusBadge from '../components/StatusBadge';
 import EmptyState from '../components/EmptyState';
 import LoadingSpinner from '../components/LoadingSpinner';
 import Modal from '../components/Modal';
 import toast from 'react-hot-toast';
+import { getErrorMessage } from '../utils/errorUtils';
 
 export default function ChannelsPage() {
   const [channels, setChannels] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
+  const [editChannel, setEditChannel] = useState(null);
   const [form, setForm] = useState({ channelType: 'slack', botToken: '', slackChannelId: '', whatsappPhoneNumber: '', consentGiven: false });
 
   const fetchChannels = async () => {
     try {
       const { data } = await listChannels();
       setChannels(Array.isArray(data) ? data : []);
-    } catch {
-      toast.error('Failed to load channels');
+    } catch (err) {
+      toast.error(getErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -26,16 +28,42 @@ export default function ChannelsPage() {
 
   useEffect(() => { fetchChannels(); }, []);
 
+  const resetForm = () => setForm({ channelType: 'slack', botToken: '', slackChannelId: '', whatsappPhoneNumber: '', consentGiven: false });
+
   const handleCreate = async (e) => {
     e.preventDefault();
     try {
       await createChannel(form);
       toast.success('Channel added!');
       setShowAdd(false);
-      setForm({ channelType: 'slack', botToken: '', slackChannelId: '', whatsappPhoneNumber: '', consentGiven: false });
+      resetForm();
       fetchChannels();
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to create channel');
+      toast.error(getErrorMessage(err));
+    }
+  };
+
+  const openEdit = (ch) => {
+    setEditChannel(ch);
+    setForm({
+      channelType: ch.channelType || ch.channel_type,
+      botToken: '',
+      slackChannelId: ch.slackChannelId || ch.slack_channel_id || '',
+      whatsappPhoneNumber: ch.whatsappPhoneNumber || ch.whatsapp_phone_number || '',
+      consentGiven: ch.consentGiven ?? ch.consent_given ?? false,
+    });
+  };
+
+  const handleUpdate = async (e) => {
+    e.preventDefault();
+    try {
+      await updateChannel(editChannel.id, form);
+      toast.success('Channel updated!');
+      setEditChannel(null);
+      resetForm();
+      fetchChannels();
+    } catch (err) {
+      toast.error(getErrorMessage(err));
     }
   };
 
@@ -45,18 +73,68 @@ export default function ChannelsPage() {
       await deleteChannel(id);
       toast.success('Channel removed');
       fetchChannels();
-    } catch {
-      toast.error('Failed to delete');
+    } catch (err) {
+      toast.error(getErrorMessage(err));
     }
   };
 
   if (loading) return <LoadingSpinner />;
 
+  const channelForm = (onSubmit, submitLabel) => (
+    <form onSubmit={onSubmit} className="space-y-4">
+      {!editChannel && (
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Channel Type</label>
+          <select value={form.channelType} onChange={(e) => setForm({ ...form, channelType: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            <option value="slack">Slack</option>
+            <option value="whatsapp">WhatsApp</option>
+          </select>
+        </div>
+      )}
+
+      {form.channelType === 'slack' ? (
+        <>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Bot Token</label>
+            <input type="text" value={form.botToken} onChange={(e) => setForm({ ...form, botToken: e.target.value })}
+              placeholder={editChannel ? 'Leave blank to keep current' : 'xoxb-...'}
+              required={!editChannel}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Slack Channel ID</label>
+            <input type="text" required value={form.slackChannelId} onChange={(e) => setForm({ ...form, slackChannelId: e.target.value })}
+              placeholder="C0123456789" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+          </div>
+        </>
+      ) : (
+        <>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">WhatsApp Phone Number</label>
+            <input type="tel" required value={form.whatsappPhoneNumber} onChange={(e) => setForm({ ...form, whatsappPhoneNumber: e.target.value })}
+              placeholder="+1234567890" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+          </div>
+          <label className="flex items-center gap-2 text-sm text-gray-700">
+            <input type="checkbox" checked={form.consentGiven} onChange={(e) => setForm({ ...form, consentGiven: e.target.checked })}
+              className="rounded border-gray-300" />
+            I consent to receive WhatsApp notifications
+          </label>
+        </>
+      )}
+
+      <button type="submit"
+        className="w-full py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 cursor-pointer font-medium">
+        {submitLabel}
+      </button>
+    </form>
+  );
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Notification Channels</h1>
-        <button onClick={() => setShowAdd(true)}
+        <button onClick={() => { resetForm(); setShowAdd(true); }}
           className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 cursor-pointer text-sm font-medium">
           <Plus size={16} /> Add Channel
         </button>
@@ -66,7 +144,7 @@ export default function ChannelsPage() {
         <EmptyState icon={MessageSquare} title="No notification channels"
           description="Add Slack or WhatsApp to receive email notifications"
           action={
-            <button onClick={() => setShowAdd(true)}
+            <button onClick={() => { resetForm(); setShowAdd(true); }}
               className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 cursor-pointer text-sm">
               Add Channel
             </button>
@@ -88,6 +166,10 @@ export default function ChannelsPage() {
               </div>
               <div className="flex items-center gap-3">
                 <StatusBadge status={ch.status} />
+                <button onClick={() => openEdit(ch)} title="Edit"
+                  className="p-2 text-gray-600 hover:bg-gray-50 rounded-lg cursor-pointer">
+                  <Pencil size={16} />
+                </button>
                 <button onClick={() => handleDelete(ch.id)} title="Remove"
                   className="p-2 text-red-600 hover:bg-red-50 rounded-lg cursor-pointer">
                   <Trash2 size={16} />
@@ -99,49 +181,11 @@ export default function ChannelsPage() {
       )}
 
       <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Add Notification Channel">
-        <form onSubmit={handleCreate} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Channel Type</label>
-            <select value={form.channelType} onChange={(e) => setForm({ ...form, channelType: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
-              <option value="slack">Slack</option>
-              <option value="whatsapp">WhatsApp</option>
-            </select>
-          </div>
+        {channelForm(handleCreate, 'Add Channel')}
+      </Modal>
 
-          {form.channelType === 'slack' ? (
-            <>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Bot Token</label>
-                <input type="text" required value={form.botToken} onChange={(e) => setForm({ ...form, botToken: e.target.value })}
-                  placeholder="xoxb-..." className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Slack Channel ID</label>
-                <input type="text" required value={form.slackChannelId} onChange={(e) => setForm({ ...form, slackChannelId: e.target.value })}
-                  placeholder="C0123456789" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-              </div>
-            </>
-          ) : (
-            <>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">WhatsApp Phone Number</label>
-                <input type="tel" required value={form.whatsappPhoneNumber} onChange={(e) => setForm({ ...form, whatsappPhoneNumber: e.target.value })}
-                  placeholder="+1234567890" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-              </div>
-              <label className="flex items-center gap-2 text-sm text-gray-700">
-                <input type="checkbox" checked={form.consentGiven} onChange={(e) => setForm({ ...form, consentGiven: e.target.checked })}
-                  className="rounded border-gray-300" />
-                I consent to receive WhatsApp notifications
-              </label>
-            </>
-          )}
-
-          <button type="submit"
-            className="w-full py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 cursor-pointer font-medium">
-            Add Channel
-          </button>
-        </form>
+      <Modal open={!!editChannel} onClose={() => { setEditChannel(null); resetForm(); }} title="Edit Notification Channel">
+        {channelForm(handleUpdate, 'Save Changes')}
       </Modal>
     </div>
   );

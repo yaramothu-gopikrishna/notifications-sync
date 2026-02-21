@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import axios from 'axios';
+import { getProfile } from '../api/user';
 
 const AuthContext = createContext(null);
 
@@ -7,12 +8,31 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  const fetchUserProfile = useCallback(async () => {
+    try {
+      const { data } = await getProfile();
+      setUser((prev) => ({ ...prev, ...data, authenticated: true }));
+    } catch {
+      // Profile fetch failed — keep basic auth state
+    }
+  }, []);
+
   useEffect(() => {
     const token = localStorage.getItem('accessToken');
     if (token) {
       setUser({ authenticated: true });
+      fetchUserProfile();
     }
     setLoading(false);
+  }, [fetchUserProfile]);
+
+  // Listen for forced signout from Axios interceptor
+  useEffect(() => {
+    const handleSignout = () => {
+      setUser(null);
+    };
+    window.addEventListener('auth:signout', handleSignout);
+    return () => window.removeEventListener('auth:signout', handleSignout);
   }, []);
 
   const login = useCallback(async (email, password) => {
@@ -20,6 +40,13 @@ export function AuthProvider({ children }) {
     localStorage.setItem('accessToken', data.accessToken);
     localStorage.setItem('refreshToken', data.refreshToken);
     setUser({ authenticated: true, email });
+    // Fetch full profile after login
+    try {
+      const profile = await getProfile();
+      setUser((prev) => ({ ...prev, ...profile.data }));
+    } catch {
+      // Continue with basic state
+    }
     return data;
   }, []);
 
@@ -28,6 +55,12 @@ export function AuthProvider({ children }) {
     localStorage.setItem('accessToken', data.accessToken);
     localStorage.setItem('refreshToken', data.refreshToken);
     setUser({ authenticated: true, email });
+    try {
+      const profile = await getProfile();
+      setUser((prev) => ({ ...prev, ...profile.data }));
+    } catch {
+      // Continue with basic state
+    }
     return data;
   }, []);
 

@@ -40,7 +40,7 @@ public class NotificationChannelServiceImpl implements NotificationChannelServic
         channel.setUser(user);
         channel.setStatus("active");
 
-        if (request.isConsentGiven()) {
+        if (Boolean.TRUE.equals(request.getConsentGiven())) {
             channel.setConsentGiven(true);
             channel.setConsentGivenAt(Instant.now());
         }
@@ -65,7 +65,7 @@ public class NotificationChannelServiceImpl implements NotificationChannelServic
 
         channelMapper.updateEntity(request, channel);
 
-        if (request.isConsentGiven() && !channel.isConsentGiven()) {
+        if (Boolean.TRUE.equals(request.getConsentGiven()) && !channel.isConsentGiven()) {
             channel.setConsentGiven(true);
             channel.setConsentGivenAt(Instant.now());
         }

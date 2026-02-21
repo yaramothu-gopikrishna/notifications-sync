@@ -13,10 +13,23 @@ client.interceptors.request.use((config) => {
   return config;
 });
 
+const forceSignout = () => {
+  localStorage.removeItem('accessToken');
+  localStorage.removeItem('refreshToken');
+  window.dispatchEvent(new CustomEvent('auth:signout'));
+  window.location.href = '/login';
+};
+
 client.interceptors.response.use(
   (response) => response,
   async (error) => {
     const original = error.config;
+
+    if (error.response?.status === 403) {
+      forceSignout();
+      return Promise.reject(error);
+    }
+
     if (error.response?.status === 401 && !original._retry) {
       original._retry = true;
       const refreshToken = localStorage.getItem('refreshToken');
@@ -28,12 +41,10 @@ client.interceptors.response.use(
           original.headers.Authorization = `Bearer ${data.accessToken}`;
           return client(original);
         } catch {
-          localStorage.removeItem('accessToken');
-          localStorage.removeItem('refreshToken');
-          window.location.href = '/login';
+          forceSignout();
         }
       } else {
-        window.location.href = '/login';
+        forceSignout();
       }
     }
     return Promise.reject(error);

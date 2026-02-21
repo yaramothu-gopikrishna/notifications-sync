@@ -28,6 +28,12 @@ public class User {
     @Column(name = "notifications_paused", nullable = false)
     private boolean notificationsPaused = false;
 
+    @Column(name = "password_reset_token", length = 128)
+    private String passwordResetToken;
+
+    @Column(name = "password_reset_expires_at")
+    private Instant passwordResetExpiresAt;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;

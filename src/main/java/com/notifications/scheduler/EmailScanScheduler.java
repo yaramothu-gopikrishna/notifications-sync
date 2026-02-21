@@ -22,7 +22,7 @@ public class EmailScanScheduler {
 
     @Scheduled(fixedDelayString = "${gmail.scan.interval:60000}")
     public void scanAllActiveAccounts() {
-        List<EmailAccount> activeAccounts = emailAccountRepository.findByStatus("active");
+        List<EmailAccount> activeAccounts = emailAccountRepository.findByStatusWithUser("active");
         log.debug("Scanning {} active email accounts", activeAccounts.size());
 
         for (EmailAccount account : activeAccounts) {

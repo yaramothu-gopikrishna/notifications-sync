@@ -193,6 +193,19 @@ curl -s -X POST http://localhost:8080/api/v1/channels \
 
 ---
 
+## Adding Test Users (Google OAuth — Testing Mode)
+
+When your Google Cloud project's OAuth consent screen is in **Testing** publishing status, only explicitly listed test users can complete the OAuth flow.
+
+1. Go to [Google Cloud Console → APIs & Services → OAuth consent screen](https://console.cloud.google.com/apis/credentials/consent)
+2. Under the **Test users** section, click **+ Add Users**
+3. Enter the Gmail address(es) that will connect their mailbox in this app
+4. Click **Save**
+
+> **Note:** You can add up to 100 test users. Once your app is verified and published to "Production", any Google user can authorize.
+
+---
+
 ## Troubleshooting
 
 | Problem | Fix |

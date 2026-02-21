@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { Mail, Pause, Play, Trash2, Plus } from 'lucide-react';
+import { Mail, Pause, Play, Trash2, Plus, Info } from 'lucide-react';
 import { listAccounts, connectGmail, pauseAccount, resumeAccount, disconnectAccount } from '../api/emailAccounts';
 import StatusBadge from '../components/StatusBadge';
 import EmptyState from '../components/EmptyState';
 import LoadingSpinner from '../components/LoadingSpinner';
 import toast from 'react-hot-toast';
+import { getErrorMessage } from '../utils/errorUtils';
 
 export default function EmailAccountsPage() {
   const [accounts, setAccounts] = useState([]);
@@ -15,7 +16,7 @@ export default function EmailAccountsPage() {
       const { data } = await listAccounts();
       setAccounts(Array.isArray(data) ? data : []);
     } catch {
-      toast.error('Failed to load accounts');
+      toast.error(getErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -29,7 +30,7 @@ export default function EmailAccountsPage() {
       window.open(data.authorizationUrl, '_blank');
       toast.success('Complete authorization in the new tab');
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to start connection. Configure GOOGLE_CLIENT_ID first.');
+      toast.error(getErrorMessage(err));
     }
   };
 
@@ -39,7 +40,7 @@ export default function EmailAccountsPage() {
       toast.success('Account paused');
       fetchAccounts();
     } catch {
-      toast.error('Failed to pause');
+      toast.error(getErrorMessage(err));
     }
   };
 
@@ -49,7 +50,7 @@ export default function EmailAccountsPage() {
       toast.success('Account resumed');
       fetchAccounts();
     } catch {
-      toast.error('Failed to resume');
+      toast.error(getErrorMessage(err));
     }
   };
 
@@ -60,7 +61,7 @@ export default function EmailAccountsPage() {
       toast.success('Account disconnected');
       fetchAccounts();
     } catch {
-      toast.error('Failed to disconnect');
+      toast.error(getErrorMessage(err));
     }
   };
 
@@ -77,7 +78,16 @@ export default function EmailAccountsPage() {
       </div>
 
       {accounts.length === 0 ? (
-        <EmptyState icon={Mail} title="No email accounts connected"
+        <>
+          <div className="mb-4 bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start gap-3">
+            <Info size={20} className="text-blue-600 mt-0.5 shrink-0" />
+            <p className="text-sm text-blue-800">
+              Your Google Cloud project may be in <strong>Testing</strong> mode. Only test users added in the{' '}
+              <em>OAuth consent screen → Test users</em> section of Google Cloud Console can connect.
+              See <code className="bg-blue-100 px-1 rounded">quickstart.md</code> for setup instructions.
+            </p>
+          </div>
+          <EmptyState icon={Mail} title="No email accounts connected"
           description="Connect your Gmail account to start receiving notifications"
           action={
             <button onClick={handleConnect}
@@ -85,6 +95,7 @@ export default function EmailAccountsPage() {
               Connect Gmail
             </button>
           } />
+        </>
       ) : (
         <div className="space-y-3">
           {accounts.map((acc) => (

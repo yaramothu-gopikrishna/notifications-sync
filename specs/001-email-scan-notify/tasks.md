@@ -1,197 +1,247 @@
 # Tasks: Email Scan & Mobile Notifications
 
 **Input**: Design documents from `/specs/001-email-scan-notify/`
-**Prerequisites**: plan.md ✅, spec.md ✅, research.md ✅, data-model.md ✅, contracts/api.yaml ✅
+**Prerequisites**: plan.md ✅, spec.md ✅, research.md ✅, data-model.md ✅, contracts/api.yaml ✅, quickstart.md ✅
 
-## Format: `[ID] [P?] [Story?] Description`
+**Tests**: Not explicitly requested — test tasks are omitted.
+
+**Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
+
+**Status Legend**: ✅ = Done (implemented in prior sessions), 🆕 = New task
+
+## Format: `[ID] [P?] [Story] Description`
 
 - **[P]**: Can run in parallel (different files, no dependencies)
-- **[USx]**: Which user story this task belongs to (omitted for setup/foundational tasks)
-- All source paths relative to repo root
+- **[Story]**: Which user story this task belongs to (e.g., US1, US2, US3)
+- Include exact file paths in descriptions
 
 ## Path Conventions
 
-- **Source**: `src/main/java/com/notifications/`
-- **Resources**: `src/main/resources/`
+- **Backend**: `src/main/java/com/notifications/` (Spring Boot)
+- **Frontend**: `frontend/src/` (React + Vite)
 - **Migrations**: `src/main/resources/db/migration/`
+- **Config**: `src/main/resources/`
 
 ---
 
-## Phase 1: Setup (Shared Infrastructure)
+## Phase 1: Setup (Shared Infrastructure) ✅
 
-**Purpose**: Project initialization, dependency management, and baseline configuration
+**Purpose**: Project initialization, build tooling, Docker, and basic Spring Boot scaffolding
 
-- [ ] T001 Initialize Spring Boot 3.3+ project with Java 21 — generate `pom.xml` with dependencies: spring-boot-starter-web, spring-boot-starter-data-jpa, spring-boot-starter-security, spring-boot-starter-validation, spring-boot-starter-actuator, postgresql driver, flyway-core, lombok, mapstruct + mapstruct-processor, resilience4j-spring-boot3, spring-boot-starter-data-redis, google-api-services-gmail, google-auth-library-oauth2-http, com.slack.api:slack-api-client, com.twilio.sdk:twilio, jjwt-api/impl/jackson, spring-cloud-gcp-starter-pubsub
-- [ ] T002 [P] Create main application class `src/main/java/com/notifications/NotificationsApplication.java` with `@SpringBootApplication` annotation
-- [ ] T003 [P] Create base `application.yml` at `src/main/resources/application.yml` — configure server port 8080, datasource (PostgreSQL 16), JPA hibernate ddl-auto=validate, flyway enabled, Redis host/port, logging levels, and placeholder sections for gmail/slack/whatsapp properties
-- [ ] T004 [P] Create `application-dev.yml` at `src/main/resources/application-dev.yml` — local PostgreSQL (localhost:5432/notifications_dev), local Redis (localhost:6379), debug logging, Gmail/Slack/WhatsApp sandbox credentials placeholders
-- [ ] T005 [P] Create `application-prod.yml` at `src/main/resources/application-prod.yml` — environment variable references for all secrets (`${DB_URL}`, `${REDIS_URL}`, `${GMAIL_CLIENT_SECRET}`, etc.), info logging level
-- [ ] T006 [P] Create `Dockerfile` at repo root — multi-stage build with Eclipse Temurin 21-jdk for build, 21-jre for runtime, expose port 8080, non-root user
-- [ ] T007 [P] Create `docker-compose.yml` at repo root — services for PostgreSQL 16 (port 5432, volume mount), Redis 7 (port 6379), and the Spring Boot application (depends_on postgres/redis, env_file)
+- [x] T001 Create project structure with Maven `pom.xml` including all dependencies in `pom.xml`
+- [x] T002 [P] Create `Dockerfile` with multi-stage build in `Dockerfile`
+- [x] T003 [P] Create `docker-compose.yml` with PostgreSQL 16 and Redis 7 services in `docker-compose.yml`
+- [x] T004 [P] Create `.gitignore` with Java/Maven/IDE/Docker exclusions in `.gitignore`
+- [x] T005 Create Spring Boot main application class in `src/main/java/com/notifications/NotificationsApplication.java`
+- [x] T006 [P] Create `application.yml` with base config in `src/main/resources/application.yml`
+- [x] T007 [P] Create `application-dev.yml` with dev-specific config in `src/main/resources/application-dev.yml`
+- [x] T008 [P] Create `application-prod.yml` with production config in `src/main/resources/application-prod.yml`
 
 ---
 
-## Phase 2: Foundational (Blocking Prerequisites)
+## Phase 2: Foundational (Blocking Prerequisites) ✅
 
 **Purpose**: Core infrastructure that MUST be complete before ANY user story can be implemented
 
-**⚠️ CRITICAL**: No user story work can begin until this phase is complete
+### Database Migrations ✅
 
-### Database Migrations
+- [x] T009 Create Flyway migration V1 for `users` table in `src/main/resources/db/migration/V1__create_users.sql`
+- [x] T010 Create Flyway migration V2 for `email_accounts` table in `src/main/resources/db/migration/V2__create_email_accounts.sql`
+- [x] T011 Create Flyway migration V3 for `notification_channels` table in `src/main/resources/db/migration/V3__create_notification_channels.sql`
+- [x] T012 Create Flyway migration V4 for `notifications` table in `src/main/resources/db/migration/V4__create_notifications.sql`
+- [x] T013 Create Flyway migration V5 for `filter_rules` table in `src/main/resources/db/migration/V5__create_filter_rules.sql`
 
-- [ ] T008 Create Flyway migration `src/main/resources/db/migration/V1__create_users.sql` — CREATE TABLE users with columns: id (UUID PK), email (VARCHAR 320 UNIQUE NOT NULL), password_hash (VARCHAR 72 NOT NULL), notifications_paused (BOOLEAN DEFAULT FALSE), created_at/updated_at (TIMESTAMPTZ) per data-model.md DDL
-- [ ] T009 [P] Create Flyway migration `src/main/resources/db/migration/V2__create_email_accounts.sql` — CREATE TABLE email_accounts with all columns per data-model.md DDL including status CHECK constraint, encrypted token columns, history_id, token_expires_at, UNIQUE(user_id, email_address), and all indexes (ix_email_accounts_user_id, ix_email_accounts_status, ix_email_accounts_token_expires)
-- [ ] T010 [P] Create Flyway migration `src/main/resources/db/migration/V3__create_notification_channels.sql` — CREATE TABLE notification_channels with all columns per data-model.md DDL including channel_type CHECK, status CHECK, UNIQUE(user_id, channel_type), and all indexes
-- [ ] T011 [P] Create Flyway migration `src/main/resources/db/migration/V4__create_notifications.sql` — CREATE TABLE notifications with all columns per data-model.md DDL including delivery_status CHECK, all FK constraints (ON DELETE CASCADE), and all 5 indexes
-- [ ] T012 [P] Create Flyway migration `src/main/resources/db/migration/V5__create_filter_rules.sql` — CREATE TABLE filter_rules with all columns per data-model.md DDL including rule_type CHECK, and indexes (ix_filter_rules_user_active, ix_filter_rules_user_type)
+### Domain Entities ✅
 
-### Domain Entities
+- [x] T014 [P] Create User JPA entity in `src/main/java/com/notifications/domain/User.java`
+- [x] T015 [P] Create EmailAccount JPA entity in `src/main/java/com/notifications/domain/EmailAccount.java`
+- [x] T016 [P] Create NotificationChannel JPA entity in `src/main/java/com/notifications/domain/NotificationChannel.java`
+- [x] T017 [P] Create Notification JPA entity in `src/main/java/com/notifications/domain/Notification.java`
+- [x] T018 [P] Create FilterRule JPA entity in `src/main/java/com/notifications/domain/FilterRule.java`
 
-- [ ] T013 Create User entity at `src/main/java/com/notifications/domain/User.java` — JPA `@Entity` mapped to `users` table with UUID id (`@GeneratedValue`), email, passwordHash, notificationsPaused, createdAt/updatedAt (`@CreationTimestamp`/`@UpdateTimestamp`), Lombok `@Getter @Setter @NoArgsConstructor`
-- [ ] T014 [P] Create EmailAccount entity at `src/main/java/com/notifications/domain/EmailAccount.java` — JPA entity mapped to `email_accounts`, `@ManyToOne` to User, status field as String with valid values (active/paused/error), encrypted token fields (plain String — encryption handled by JPA converter), historyId, tokenExpiresAt, lastScannedAt
-- [ ] T015 [P] Create NotificationChannel entity at `src/main/java/com/notifications/domain/NotificationChannel.java` — JPA entity mapped to `notification_channels`, `@ManyToOne` to User, channelType (slack/whatsapp), status, botTokenEncrypted, slackChannelId, whatsappPhoneNumber, twilioSid, keyVersion, consentGiven, consentGivenAt
-- [ ] T016 [P] Create Notification entity at `src/main/java/com/notifications/domain/Notification.java` — JPA entity mapped to `notifications`, `@ManyToOne` to User/EmailAccount/NotificationChannel, senderName, senderAddress, subject, preview(150), deliveryStatus, externalMessageId, retryCount, emailReceivedAt, deliveredAt
-- [ ] T017 [P] Create FilterRule entity at `src/main/java/com/notifications/domain/FilterRule.java` — JPA entity mapped to `filter_rules`, `@ManyToOne` to User, ruleType (sender/subject), pattern, isActive, priority
+### Repositories ✅
 
-### Repositories
+- [x] T019 [P] Create UserRepository in `src/main/java/com/notifications/repository/UserRepository.java`
+- [x] T020 [P] Create EmailAccountRepository in `src/main/java/com/notifications/repository/EmailAccountRepository.java`
+- [x] T021 [P] Create NotificationChannelRepository in `src/main/java/com/notifications/repository/NotificationChannelRepository.java`
+- [x] T022 [P] Create NotificationRepository in `src/main/java/com/notifications/repository/NotificationRepository.java`
+- [x] T023 [P] Create FilterRuleRepository in `src/main/java/com/notifications/repository/FilterRuleRepository.java`
 
-- [ ] T018 Create UserRepository at `src/main/java/com/notifications/repository/UserRepository.java` — extends `JpaRepository<User, UUID>`, add `Optional<User> findByEmail(String email)`, `boolean existsByEmail(String email)`
-- [ ] T019 [P] Create EmailAccountRepository at `src/main/java/com/notifications/repository/EmailAccountRepository.java` — extends `JpaRepository<EmailAccount, UUID>`, add `List<EmailAccount> findByUserIdAndStatus(UUID userId, String status)`, `List<EmailAccount> findByStatus(String status)`, `Optional<EmailAccount> findByIdAndUserId(UUID id, UUID userId)`, `List<EmailAccount> findByUserId(UUID userId)`
-- [ ] T020 [P] Create NotificationChannelRepository at `src/main/java/com/notifications/repository/NotificationChannelRepository.java` — extends `JpaRepository<NotificationChannel, UUID>`, add `List<NotificationChannel> findByUserIdAndStatus(UUID userId, String status)`, `Optional<NotificationChannel> findByIdAndUserId(UUID id, UUID userId)`, `List<NotificationChannel> findByUserId(UUID userId)`
-- [ ] T021 [P] Create NotificationRepository at `src/main/java/com/notifications/repository/NotificationRepository.java` — extends `JpaRepository<Notification, UUID>`, add `Page<Notification> findByUserIdOrderByCreatedAtDesc(UUID userId, Pageable pageable)`, `List<Notification> findByDeliveryStatus(String status)`
-- [ ] T022 [P] Create FilterRuleRepository at `src/main/java/com/notifications/repository/FilterRuleRepository.java` — extends `JpaRepository<FilterRule, UUID>`, add `List<FilterRule> findByUserIdAndIsActive(UUID userId, boolean isActive)`, `Optional<FilterRule> findByIdAndUserId(UUID id, UUID userId)`, `List<FilterRule> findByUserId(UUID userId)`
+### Security & Auth Infrastructure ✅
 
-### Security & Auth Infrastructure
+- [x] T024 Create AES-256-GCM encryption JPA AttributeConverter in `src/main/java/com/notifications/config/EncryptionConverter.java`
+- [x] T025 Create JWT token provider in `src/main/java/com/notifications/config/JwtTokenProvider.java`
+- [x] T026 Create JWT authentication filter in `src/main/java/com/notifications/config/JwtAuthenticationFilter.java`
+- [x] T027 Create SecurityConfig in `src/main/java/com/notifications/config/SecurityConfig.java`
 
-- [ ] T023 Create SecurityConfig at `src/main/java/com/notifications/config/SecurityConfig.java` — `@Configuration @EnableWebSecurity`, configure `SecurityFilterChain`: permit `/api/v1/auth/**` and `/api/v1/email-accounts/callback` unauthenticated, require authentication for all other endpoints, stateless session management, add JWT authentication filter, disable CSRF
-- [ ] T024 [P] Implement JWT utility class at `src/main/java/com/notifications/config/JwtTokenProvider.java` — generate access tokens (15 min expiry) and refresh tokens (7 day expiry) using io.jsonwebtoken (jjwt), extract userId from token, validate token signature (HS256 with configurable secret from `application.yml`), throw custom exceptions on expired/invalid tokens
-- [ ] T025 Implement JWT authentication filter at `src/main/java/com/notifications/config/JwtAuthenticationFilter.java` — extends `OncePerRequestFilter`, extract Bearer token from Authorization header, validate via JwtTokenProvider, set `UsernamePasswordAuthenticationToken` in SecurityContext with userId as principal
+### Resilience & Cross-Cutting Config ✅
 
-### Cross-Cutting Infrastructure
+- [x] T028 [P] Create RedisConfig in `src/main/java/com/notifications/config/RedisConfig.java`
+- [x] T029 [P] Create SchedulerConfig in `src/main/java/com/notifications/config/SchedulerConfig.java`
+- [x] T030 [P] Create WebConfig in `src/main/java/com/notifications/config/WebConfig.java`
+- [x] T031 Configure Resilience4j circuit breakers in `src/main/resources/application.yml`
+- [x] T032 Configure Resilience4j rate limiters in `src/main/resources/application.yml`
 
-- [ ] T026 [P] Create RedisConfig at `src/main/java/com/notifications/config/RedisConfig.java` — `@Configuration`, configure `RedisTemplate<String, String>` with `StringRedisSerializer`, configure `RedisConnectionFactory` from application properties
-- [ ] T027 [P] Create ResilienceConfig at `src/main/java/com/notifications/config/ResilienceConfig.java` — `@Configuration`, define circuit breaker instances for gmail/slack/whatsapp using `CircuitBreakerRegistry` with count-based sliding window (size=20, failure threshold=50%, slow call threshold=80%/5s, wait-in-open=30s), define rate limiter instances per provider per research.md §4-5 configuration
-- [ ] T028 [P] Create AES-256-GCM encryption converter at `src/main/java/com/notifications/config/EncryptionConverter.java` — implements `AttributeConverter<String, String>`, encrypt with AES/GCM/NoPadding (256-bit key from env var `ENCRYPTION_KEY`), output `base64(IV ‖ ciphertext ‖ authTag)`, decrypt by parsing base64 → extract IV (12 bytes) → decrypt; apply to token fields on EmailAccount and NotificationChannel via `@Convert`
-- [ ] T029 [P] Create custom exception classes: `src/main/java/com/notifications/exception/EmailConnectionException.java` (extends RuntimeException), `src/main/java/com/notifications/exception/NotificationDeliveryException.java`, `src/main/java/com/notifications/exception/RateLimitExceededException.java`, `src/main/java/com/notifications/exception/ResourceNotFoundException.java`, `src/main/java/com/notifications/exception/TokenExpiredException.java`
-- [ ] T030 [P] Create GlobalExceptionHandler at `src/main/java/com/notifications/controller/GlobalExceptionHandler.java` — `@RestControllerAdvice`, handle: `ResourceNotFoundException` → 404, `RateLimitExceededException` → 429 with Retry-After header, `EmailConnectionException` → 502, `NotificationDeliveryException` → 502, `MethodArgumentNotValidException` → 400 with field errors, `AuthenticationException` → 401, generic `Exception` → 500; return structured JSON `{ error, message, timestamp, path }`
-- [ ] T031 [P] Create SchedulerConfig at `src/main/java/com/notifications/config/SchedulerConfig.java` — `@Configuration @EnableScheduling`, configure `ThreadPoolTaskScheduler` with pool size 5 for concurrent email scanning tasks
+### DTOs & Mappers ✅
 
-### DTOs & Mappers
+- [x] T033 [P] Create request DTOs: RegisterRequest, LoginRequest, RefreshTokenRequest in `src/main/java/com/notifications/dto/request/`
+- [x] T034 [P] Create request DTOs: NotificationChannelRequest, FilterRuleRequest in `src/main/java/com/notifications/dto/request/`
+- [x] T035 [P] Create response DTOs: AuthTokenResponse, EmailAccountResponse, NotificationChannelResponse, NotificationResponse, FilterRuleResponse in `src/main/java/com/notifications/dto/response/`
+- [x] T036 [P] Create MapStruct mappers in `src/main/java/com/notifications/mapper/`
 
-- [ ] T032 Create request/response DTOs at `src/main/java/com/notifications/dto/request/` and `src/main/java/com/notifications/dto/response/` — RegisterRequest (email, password with @NotBlank @Email @Size), LoginRequest (email, password), RefreshTokenRequest (refreshToken), AuthTokenResponse (accessToken, refreshToken, expiresIn), EmailAccountResponse (id, provider, emailAddress, status, lastScannedAt, createdAt), NotificationChannelRequest (channelType, botToken, slackChannelId, whatsappPhoneNumber, twilioSid, consentGiven), NotificationChannelResponse, FilterRuleRequest (ruleType, pattern, isActive, priority), FilterRuleResponse, NotificationResponse (id, senderName, senderAddress, subject, preview, deliveryStatus, emailReceivedAt, deliveredAt, channelType), PaginatedResponse wrapper
-- [ ] T033 [P] Create MapStruct mappers at `src/main/java/com/notifications/mapper/` — EmailAccountMapper (entity↔response), NotificationChannelMapper (request↔entity, entity↔response), FilterRuleMapper (request↔entity, entity↔response), NotificationMapper (entity↔response); all annotated with `@Mapper(componentModel = "spring")`
+### Exception Handling ✅
 
-### Auth Service
+- [x] T037 [P] Create custom exceptions in `src/main/java/com/notifications/exception/`
+- [x] T038 Create GlobalExceptionHandler in `src/main/java/com/notifications/controller/GlobalExceptionHandler.java`
 
-- [ ] T034 Create AuthService interface at `src/main/java/com/notifications/service/auth/AuthService.java` — define methods: `AuthTokenResponse register(RegisterRequest request)`, `AuthTokenResponse login(LoginRequest request)`, `AuthTokenResponse refreshToken(String refreshToken)`
-- [ ] T035 Implement AuthServiceImpl at `src/main/java/com/notifications/service/auth/AuthServiceImpl.java` — `@Service`, inject UserRepository + JwtTokenProvider + BCryptPasswordEncoder; register: validate email uniqueness → hash password → save User → generate tokens; login: find by email → verify password → generate tokens; refreshToken: validate refresh token → extract userId → generate new token pair
-- [ ] T036 Create AuthController at `src/main/java/com/notifications/controller/AuthController.java` — `@RestController @RequestMapping("/api/v1/auth")`, POST `/register` → 201, POST `/login` → 200, POST `/refresh` → 200; delegate to AuthService, all three endpoints are unauthenticated per SecurityConfig
+### Auth Service & Controller ✅
 
-**Checkpoint**: Foundation ready — all entities, repositories, auth, config, and error handling in place. User story implementation can now begin.
-
----
-
-## Phase 3: User Story 1 — Connect Email Account (Priority: P1) 🎯 MVP
-
-**Goal**: Users can connect their Gmail account via OAuth2, view connection status, and disconnect accounts
-
-**Independent Test**: Connect a Gmail account via OAuth2 flow, verify the account appears in GET /email-accounts with status "active"
-
-### Implementation for User Story 1
-
-- [ ] T037 [US1] Create GmailClientService at `src/main/java/com/notifications/service/email/GmailClientService.java` — `@Service`, inject Google OAuth2 client credentials from `application.yml` (clientId, clientSecret, redirectUri, scopes: gmail.readonly); implement `String buildAuthorizationUrl(UUID userId)` — generate Google OAuth2 consent URL with state=userId; implement `GoogleTokenResponse exchangeCode(String code)` — exchange authorization code for access+refresh tokens; implement `Gmail getGmailService(String accessToken)` — build authorized Gmail client instance
-- [ ] T038 [US1] Create EmailAccountController at `src/main/java/com/notifications/controller/EmailAccountController.java` — `@RestController @RequestMapping("/api/v1/email-accounts")`, implement: POST `/connect` → call GmailClientService.buildAuthorizationUrl, return redirect URL; GET `/callback?code=&state=` → exchange code for tokens, save EmailAccount, return 201 with EmailAccountResponse; GET `/` → list user's email accounts; GET `/{id}` → get single account detail; DELETE `/{id}` → delete account and cascade; extract userId from SecurityContext for all endpoints
-- [ ] T039 [US1] Create EmailAccountService interface at `src/main/java/com/notifications/service/email/EmailAccountService.java` — define: `EmailAccountResponse connectAccount(UUID userId, String code)`, `List<EmailAccountResponse> listAccounts(UUID userId)`, `EmailAccountResponse getAccount(UUID userId, UUID accountId)`, `void disconnectAccount(UUID userId, UUID accountId)`
-- [ ] T040 [US1] Implement EmailAccountServiceImpl at `src/main/java/com/notifications/service/email/EmailAccountServiceImpl.java` — `@Service`, inject EmailAccountRepository, GmailClientService, EmailAccountMapper, EncryptionConverter; connectAccount: exchange code → encrypt tokens → save EmailAccount with status=active, provider=gmail → fetch initial historyId via `users.getProfile` → return mapped response; listAccounts/getAccount: query by userId → map to responses; disconnectAccount: find by id+userId → delete → revoke Gmail tokens
-- [ ] T041 [US1] Add Gmail OAuth2 properties to `src/main/resources/application.yml` — add `gmail.oauth2.client-id`, `gmail.oauth2.client-secret`, `gmail.oauth2.redirect-uri` (http://localhost:8080/api/v1/email-accounts/callback), `gmail.oauth2.scopes` (https://www.googleapis.com/auth/gmail.readonly), `gmail.oauth2.token-uri`, `gmail.oauth2.auth-uri`
-
-**Checkpoint**: Users can connect Gmail via OAuth2, list/view/disconnect email accounts. US1 is fully functional.
+- [x] T039 Create AuthService interface in `src/main/java/com/notifications/service/auth/AuthService.java`
+- [x] T040 Create AuthServiceImpl in `src/main/java/com/notifications/service/auth/AuthServiceImpl.java`
+- [x] T041 Create AuthController in `src/main/java/com/notifications/controller/AuthController.java`
 
 ---
 
-## Phase 4: User Story 2 — Receive Notifications for New Emails (Priority: P1) 🎯 MVP
+## Phase 3: User Story 1 — Connect Email Account (Priority: P1) ✅
 
-**Goal**: System scans connected email accounts for new emails and delivers notifications to configured Slack/WhatsApp channels with deduplication and batching
-
-**Independent Test**: Connect email + configure Slack channel → send test email → verify Slack notification received within 2 minutes with sender, subject, preview
-
-### Implementation for User Story 2
-
-- [ ] T042 [US2] Create NotificationSender interface (Strategy pattern) at `src/main/java/com/notifications/service/notification/NotificationSender.java` — define `String send(NotificationChannel channel, String senderName, String subject, String preview)` returning external message ID, `boolean supports(String channelType)`
-- [ ] T043 [US2] Implement SlackNotificationSender at `src/main/java/com/notifications/service/notification/SlackNotificationSender.java` — `@Service`, inject Slack `AsyncMethodsClient`, apply `@CircuitBreaker(name="slack")` and `@RateLimiter(name="slack")` on send method; decrypt bot_token → build Block Kit message (section: "📧 New email from {sender}", section: "Subject: {subject}", section: "{preview}") → call `chatPostMessage(channel.slackChannelId)` → return Slack `ts` as externalMessageId; handle 429 → parse Retry-After → throw RateLimitExceededException; handle channel_not_found/token_revoked → throw NotificationDeliveryException
-- [ ] T044 [US2] Implement WhatsAppNotificationSender at `src/main/java/com/notifications/service/notification/WhatsAppNotificationSender.java` — `@Service`, apply `@CircuitBreaker(name="whatsapp")` and `@RateLimiter(name="whatsapp")`; use Twilio `Message.creator()` with `whatsapp:` prefixed from/to numbers → send template message "📧 New email from {sender}\nSubject: {subject}\n{preview}" → return Twilio MessageSid as externalMessageId; configure Twilio credentials from `application.yml` (twilio.account-sid, twilio.auth-token, twilio.whatsapp.from-number)
-- [ ] T045 [US2] Create NotificationDispatcher at `src/main/java/com/notifications/service/notification/NotificationDispatcher.java` — `@Service`, inject `List<NotificationSender>` (auto-discovers all implementations); implement `void dispatch(User user, EmailAccount account, String senderName, String senderAddress, String subject, String preview, Instant emailReceivedAt)` — find user's active NotificationChannels → for each channel, find matching sender via `supports(channelType)` → call `send()` → create Notification entity with deliveryStatus=sent, store externalMessageId → save via NotificationRepository; on failure: create Notification with deliveryStatus=failed, increment retryCount
-- [ ] T046 [US2] Create DeduplicationService interface at `src/main/java/com/notifications/service/dedup/DeduplicationService.java` — define `boolean isDuplicate(UUID userId, String gmailMessageId)`, `void markProcessed(UUID userId, String gmailMessageId)`
-- [ ] T047 [US2] Implement RedisDeduplicationServiceImpl at `src/main/java/com/notifications/service/dedup/RedisDeduplicationServiceImpl.java` — `@Service`, inject `RedisTemplate<String, String>`; isDuplicate: check `SISMEMBER` on key `dedup:{userId}` for gmailMessageId; markProcessed: `SADD` to `dedup:{userId}` + `EXPIRE` 48 hours (172800 seconds) if key is new; use Redis SET per research.md §7
-- [ ] T048 [US2] Create EmailScannerService interface at `src/main/java/com/notifications/service/email/EmailScannerService.java` — define `void scanAccount(EmailAccount account)` — scan a single email account for new messages and trigger notifications
-- [ ] T049 [US2] Implement EmailScannerServiceImpl at `src/main/java/com/notifications/service/email/EmailScannerServiceImpl.java` — `@Service`, inject GmailClientService, DeduplicationService, NotificationDispatcher, EmailAccountRepository; apply `@CircuitBreaker(name="gmail")` and `@RateLimiter(name="gmail")`; scanAccount: build Gmail client from decrypted access token → call `history.list(startHistoryId=account.historyId)` → for each new message ID, check dedup → call `messages.get(id, format=METADATA)` → extract sender, subject, snippet (truncate to 150 chars) → call dispatcher.dispatch() → mark as processed in dedup → update account.historyId and lastScannedAt; handle token expiry: use refresh token to get new access token → re-encrypt → update account; handle errors: set account status=error after 3 consecutive failures
-- [ ] T050 [US2] Create EmailScanScheduler at `src/main/java/com/notifications/scheduler/EmailScanScheduler.java` — `@Component`, inject EmailAccountRepository and EmailScannerService; `@Scheduled(fixedDelayString="${gmail.scan.interval:60000}")` method `scanAllActiveAccounts()` — query all EmailAccounts with status=active → for each account, call `emailScannerService.scanAccount(account)` in try-catch (log errors, don't stop scanning other accounts); skip accounts where user.notificationsPaused=true
-- [ ] T051 [US2] Create NotificationService interface at `src/main/java/com/notifications/service/notification/NotificationService.java` — define `Page<NotificationResponse> getNotificationHistory(UUID userId, Pageable pageable)`
-- [ ] T052 [US2] Implement NotificationServiceImpl at `src/main/java/com/notifications/service/notification/NotificationServiceImpl.java` — `@Service`, inject NotificationRepository and NotificationMapper; getNotificationHistory: query `findByUserIdOrderByCreatedAtDesc` → map to NotificationResponse page
-- [ ] T053 [US2] Create NotificationHistoryController — add GET `/api/v1/notifications` endpoint to a new controller at `src/main/java/com/notifications/controller/NotificationController.java` — `@RestController @RequestMapping("/api/v1/notifications")`, GET `/` with `@RequestParam defaultValue` for page/size → return paginated NotificationResponse list; extract userId from SecurityContext
-- [ ] T054 [US2] Add Twilio/Slack properties to `src/main/resources/application.yml` — add `slack.bot-token` placeholder, `twilio.account-sid`, `twilio.auth-token`, `twilio.whatsapp.from-number` (whatsapp:+14155238886 sandbox), `gmail.scan.interval: 60000`
-
-**Checkpoint**: Full email scanning → notification delivery pipeline works. Core MVP (US1 + US2) is complete.
+- [x] T042–T048 All US1 backend tasks complete (GmailClientService, EmailAccountService, EmailScanScheduler, etc.)
 
 ---
 
-## Phase 5: User Story 3 — Choose Notification Channel (Priority: P2)
+## Phase 4: User Story 2 — Receive Notifications for New Emails (Priority: P1) ✅
 
-**Goal**: Users can CRUD Slack and WhatsApp notification channels, controlling where they receive notifications
-
-**Independent Test**: Create a Slack channel via POST /notification-channels, verify it appears in GET /notification-channels, update it, delete it
-
-### Implementation for User Story 3
-
-- [ ] T055 [US3] Create NotificationChannelService interface at `src/main/java/com/notifications/service/notification/NotificationChannelService.java` — define `NotificationChannelResponse createChannel(UUID userId, NotificationChannelRequest request)`, `List<NotificationChannelResponse> listChannels(UUID userId)`, `NotificationChannelResponse updateChannel(UUID userId, UUID channelId, NotificationChannelRequest request)`, `void deleteChannel(UUID userId, UUID channelId)`
-- [ ] T056 [US3] Implement NotificationChannelServiceImpl at `src/main/java/com/notifications/service/notification/NotificationChannelServiceImpl.java` — `@Service`, inject NotificationChannelRepository, NotificationChannelMapper; createChannel: validate channelType-specific fields (slack needs botToken+slackChannelId, whatsapp needs phone+twilioSid+consent) → encrypt bot_token via @Convert → save → return response; listChannels: findByUserId → map; updateChannel: find by id+userId → update fields → save; deleteChannel: find by id+userId → delete; enforce UNIQUE(user_id, channel_type) — throw 409 on duplicate
-- [ ] T057 [US3] Create NotificationChannelController at `src/main/java/com/notifications/controller/NotificationChannelController.java` — `@RestController @RequestMapping("/api/v1/notification-channels")`, POST `/` → 201 createChannel, GET `/` → 200 listChannels, PATCH `/{id}` → 200 updateChannel, DELETE `/{id}` → 204 deleteChannel; validate request body with `@Valid`; extract userId from SecurityContext
-
-**Checkpoint**: Users can fully manage their notification channels. US3 is independently functional.
+- [x] T049–T059 All US2 backend tasks complete (Dedup, NotificationSender, SlackSender, WhatsAppSender, Dispatcher, etc.)
 
 ---
 
-## Phase 6: User Story 4 — Pause and Resume Notifications (Priority: P3)
+## Phase 5: User Story 3 — Choose Notification Channel (Priority: P2) ✅
 
-**Goal**: Users can pause and resume email scanning per account, preventing notifications during paused periods
-
-**Independent Test**: PATCH /email-accounts/{id}/pause → verify status changes to "paused" and no notifications sent for new emails; PATCH /resume → verify scanning resumes
-
-### Implementation for User Story 4
-
-- [ ] T058 [US4] Add pause/resume methods to EmailAccountService interface at `src/main/java/com/notifications/service/email/EmailAccountService.java` — add `EmailAccountResponse pauseAccount(UUID userId, UUID accountId)`, `EmailAccountResponse resumeAccount(UUID userId, UUID accountId)`
-- [ ] T059 [US4] Implement pause/resume in EmailAccountServiceImpl at `src/main/java/com/notifications/service/email/EmailAccountServiceImpl.java` — pauseAccount: find by id+userId → validate status is 'active' → set status='paused' → save → return response; resumeAccount: find by id+userId → validate status is 'paused' → set status='active' → save (scanning resumes from current historyId, no backfill) → return response; throw IllegalStateException with message if invalid transition
-- [ ] T060 [US4] Add pause/resume endpoints to EmailAccountController at `src/main/java/com/notifications/controller/EmailAccountController.java` — PATCH `/{id}/pause` → call pauseAccount → 200, PATCH `/{id}/resume` → call resumeAccount → 200
-
-**Checkpoint**: Users can pause/resume scanning. EmailScanScheduler already skips paused accounts (T050). US4 is complete.
+- [x] T060–T062 All US3 backend tasks complete (NotificationChannelService, Controller with PATCH endpoint)
 
 ---
 
-## Phase 7: User Story 5 — Notification Filtering (Priority: P3)
+## Phase 6: User Story 4 — Pause and Resume Notifications (Priority: P3) ✅
 
-**Goal**: Users can create filter rules (by sender or subject keyword) so only matching emails trigger notifications
-
-**Independent Test**: Create a sender filter rule → send matching email → notification sent; send non-matching email → no notification; delete all rules → all emails trigger notifications (default)
-
-### Implementation for User Story 5
-
-- [ ] T061 [US5] Create FilterService interface at `src/main/java/com/notifications/service/filter/FilterService.java` — define `FilterRuleResponse createRule(UUID userId, FilterRuleRequest request)`, `List<FilterRuleResponse> listRules(UUID userId)`, `FilterRuleResponse updateRule(UUID userId, UUID ruleId, FilterRuleRequest request)`, `void deleteRule(UUID userId, UUID ruleId)`, `boolean shouldNotify(UUID userId, String senderAddress, String subject)`
-- [ ] T062 [US5] Implement FilterServiceImpl at `src/main/java/com/notifications/service/filter/FilterServiceImpl.java` — `@Service`, inject FilterRuleRepository, FilterRuleMapper; CRUD: standard create/list/update/delete with userId scoping; shouldNotify: fetch active rules for userId → if no rules exist, return true (all emails notify per spec) → else iterate rules by priority: for 'sender' type check `senderAddress.equalsIgnoreCase(rule.pattern)`, for 'subject' type check `subject.toLowerCase().contains(rule.pattern.toLowerCase())` → return true if ANY rule matches, false if none match
-- [ ] T063 [US5] Create FilterRuleController at `src/main/java/com/notifications/controller/FilterRuleController.java` — `@RestController @RequestMapping("/api/v1/filter-rules")`, POST `/` → 201 createRule, GET `/` → 200 listRules, PUT `/{id}` → 200 updateRule, DELETE `/{id}` → 204 deleteRule; validate request body with `@Valid`; extract userId from SecurityContext
-- [ ] T064 [US5] Integrate FilterService into EmailScannerServiceImpl at `src/main/java/com/notifications/service/email/EmailScannerServiceImpl.java` — inject FilterService; after extracting email metadata and before calling dispatcher.dispatch(), call `filterService.shouldNotify(userId, senderAddress, subject)` → skip dispatch if returns false; still mark as processed in dedup to avoid re-evaluation
-
-**Checkpoint**: Filter rules control which emails trigger notifications. US5 is complete.
+- [x] T063–T065 All US4 backend tasks complete (pause/resume endpoints, scheduler skip logic)
 
 ---
 
-## Phase 8: Polish & Cross-Cutting Concerns
+## Phase 7: User Story 5 — Notification Filtering (Priority: P3) ✅
 
-**Purpose**: Improvements that affect multiple user stories — batching, retry, logging, health checks
+- [x] T066–T069 All US5 backend tasks complete (FilterService, FilterRuleController, scanner integration)
 
-- [ ] T065 [P] Implement notification batching logic in NotificationDispatcher at `src/main/java/com/notifications/service/notification/NotificationDispatcher.java` — add `ConcurrentHashMap<UUID, BatchWindow>` (userId → list of pending notifications + window start time); in dispatch(): if >10 notifications in 1-minute window → set deliveryStatus=batched, buffer notifications → when window closes (via scheduled flush), compose summary message ("📧 You have {count} new emails") with top 5 senders/subjects → send single summary notification; add `@Scheduled(fixedRate=60000)` method `flushBatchWindows()` to process expired windows
-- [ ] T066 [P] Implement notification retry scheduler at `src/main/java/com/notifications/scheduler/NotificationRetryScheduler.java` — `@Component @Scheduled(fixedDelay=30000)`, query notifications with deliveryStatus=failed and retryCount < 3 → for each, attempt re-delivery via NotificationDispatcher → on success set status=sent → on failure increment retryCount; exponential backoff: only retry if `updatedAt + (30s * 2^retryCount)` has passed
-- [ ] T067 [P] Add Actuator health indicators and Resilience4j endpoints — ensure `application.yml` exposes `/actuator/health` (includes circuitbreaker health indicators per ResilienceConfig), `/actuator/circuitbreakers`, `/actuator/ratelimiters`; configure `management.endpoints.web.exposure.include=health,info,circuitbreakers,ratelimiters` in `src/main/resources/application.yml`
-- [ ] T068 [P] Add structured logging throughout services — use SLF4J with MDC (Mapped Diagnostic Context) to include userId and accountId in log context; add INFO-level logs for: email account connected/disconnected, scan started/completed, notification sent/failed/batched, channel created/deleted, filter rule changes; add WARN-level for circuit breaker state changes and rate limit hits; add ERROR-level for unrecoverable failures; configure log pattern in `src/main/resources/application.yml`
+---
+
+## Phase 8: Frontend Application (React + Vite + TailwindCSS) ✅
+
+- [x] T070–T090 All frontend base tasks complete (Setup, Auth, API layer, Pages, Routing)
+
+---
+
+## Phase 9: Polish & Cross-Cutting Concerns ✅
+
+- [x] T091–T096 Original polish tasks complete
+
+---
+
+## Phase 10: UX Improvements & Missing Features 🆕
+
+**Purpose**: Address usability gaps identified during user testing — edit capabilities, error UX, auth flows, and profile features
+
+**⚠️ PRIORITY**: These are high-impact UX issues affecting everyday usability
+
+### User Story 6 — Edit Notification Channels (Priority: P1) 🆕
+
+**Goal**: Users can edit existing notification channel details (e.g., update WhatsApp phone number, Slack channel ID) without deleting and recreating
+
+**Independent Test**: Add a WhatsApp channel, click edit, change the phone number, save, verify the updated number appears in the channel list
+
+- [ ] T097 [US6] Add edit button (Pencil icon already imported) to each channel card in the channel list, wire onClick to open an edit modal pre-populated with current channel data (channelType, slackChannelId, whatsappPhoneNumber, consentGiven) in `frontend/src/pages/ChannelsPage.jsx`
+- [ ] T098 [US6] Create EditChannelModal component reusing the add-channel form fields, with pre-filled values from the selected channel, call `updateChannel(id, data)` from `frontend/src/api/channels.js` on save, show success/error toast in `frontend/src/pages/ChannelsPage.jsx`
+- [ ] T099 [P] [US6] Add `NotificationChannelUpdateRequest` DTO if not already present — allow partial updates (phone number, slack channel ID, consent) without requiring all fields in `src/main/java/com/notifications/dto/request/NotificationChannelRequest.java`
+
+**Checkpoint**: Users can edit channel details inline without delete/recreate
+
+---
+
+### User Story 7 — Forgot Password Flow (Priority: P1) 🆕
+
+**Goal**: Users who forget their password can request a reset link via email and set a new password
+
+**Independent Test**: Click "Forgot password?" on login page, enter email, verify reset token is generated (check logs in dev), use token to set new password, verify login works with new password
+
+#### Backend
+
+- [ ] T100 [US7] Add `password_reset_token` (VARCHAR 128, nullable) and `password_reset_expires_at` (TIMESTAMPTZ, nullable) columns to users table via Flyway migration V6 in `src/main/resources/db/migration/V6__add_password_reset_columns.sql`
+- [ ] T101 [US7] Update User JPA entity with `passwordResetToken` and `passwordResetExpiresAt` fields in `src/main/java/com/notifications/domain/User.java`
+- [ ] T102 [US7] Add `findByPasswordResetToken` query to UserRepository in `src/main/java/com/notifications/repository/UserRepository.java`
+- [ ] T103 [US7] Add `forgotPassword(email)` method to AuthService — generate secure random token (UUID), set 1-hour expiry, persist to user row, log the reset URL in dev mode (email sending is out of scope for MVP) in `src/main/java/com/notifications/service/auth/AuthServiceImpl.java`
+- [ ] T104 [US7] Add `resetPassword(token, newPassword)` method to AuthService — validate token exists and not expired, hash new password with BCrypt, clear reset token fields, return success in `src/main/java/com/notifications/service/auth/AuthServiceImpl.java`
+- [ ] T105 [US7] Add POST `/api/v1/auth/forgot-password` (accepts email, returns 200 always for security) and POST `/api/v1/auth/reset-password` (accepts token + newPassword, returns 200 on success) to AuthController with @RateLimiter(name="inbound-api") in `src/main/java/com/notifications/controller/AuthController.java`
+
+#### Frontend
+
+- [ ] T106 [P] [US7] Add "Forgot password?" link below the password field on LoginPage, linking to `/forgot-password` route in `frontend/src/pages/LoginPage.jsx`
+- [ ] T107 [US7] Create ForgotPasswordPage with email input form, calls POST `/api/v1/auth/forgot-password`, shows success message "If an account exists, a reset link has been sent" regardless of response in `frontend/src/pages/ForgotPasswordPage.jsx`
+- [ ] T108 [US7] Create ResetPasswordPage that reads token from URL query param, shows new password + confirm password form, calls POST `/api/v1/auth/reset-password`, redirects to login on success in `frontend/src/pages/ResetPasswordPage.jsx`
+- [ ] T109 [US7] Add `/forgot-password` and `/reset-password` routes (public, no auth required) to App.jsx router configuration in `frontend/src/App.jsx`
+- [ ] T110 [P] [US7] Create `auth` API service functions: `forgotPassword(email)` and `resetPassword(token, newPassword)` in `frontend/src/api/auth.js`
+
+**Checkpoint**: Full forgot/reset password flow works end-to-end
+
+---
+
+### User Story 8 — Proper Error Handling & Auto-Signout (Priority: P1) 🆕
+
+**Goal**: API errors display meaningful messages in the UI, error banners are dismissable, and 401/403 responses trigger automatic signout instead of showing raw error codes
+
+**Independent Test**: Let JWT expire, make any API call, verify auto-redirect to login page (not a 403 error). Trigger a validation error, verify the exact backend error message appears in the toast. Verify error toasts have a close (X) button.
+
+#### Frontend Error Infrastructure
+
+- [ ] T111 [US8] Add 403 handling to Axios response interceptor — on 403 status, clear localStorage tokens and redirect to `/login` (same behavior as 401 with expired refresh token) in `frontend/src/api/client.js`
+- [ ] T112 [US8] Improve error message extraction in Axios interceptor — create a `getErrorMessage(error)` utility that extracts `error.response.data.message` (backend structured error), falls back to `error.response.statusText`, then to a generic "Something went wrong" message in `frontend/src/utils/errorUtils.js`
+- [ ] T113 [P] [US8] Update all page components to use `getErrorMessage(err)` utility instead of inline `err.response?.data?.message || 'hardcoded fallback'` pattern in `frontend/src/pages/EmailAccountsPage.jsx`, `frontend/src/pages/ChannelsPage.jsx`, `frontend/src/pages/FiltersPage.jsx`, `frontend/src/pages/NotificationsPage.jsx`, `frontend/src/pages/DashboardPage.jsx`
+- [ ] T114 [US8] Configure react-hot-toast Toaster with dismiss button — set `toastOptions` with `duration: 5000` and custom render that includes a close (X) button on all toast types (success, error, loading) in `frontend/src/main.jsx`
+- [ ] T115 [P] [US8] Add a global error event listener in AuthContext — listen for a custom `auth:signout` event dispatched by the Axios interceptor, call `logout()` to clear state and redirect cleanly (avoids stale React state after window.location.href redirect) in `frontend/src/context/AuthContext.jsx`
+
+**Checkpoint**: All API errors show meaningful messages, expired sessions auto-logout, toasts are dismissable
+
+---
+
+### User Story 9 — User Profile & Avatar (Priority: P2) 🆕
+
+**Goal**: Users can view their profile, see their avatar (Gravatar-based), and the sidebar shows user identity
+
+**Independent Test**: Register, login, verify sidebar shows user email and Gravatar image. Navigate to profile page, verify email and account creation date are shown.
+
+#### Backend
+
+- [ ] T116 [US9] Add GET `/api/v1/users/me` endpoint to return current user's profile (id, email, notificationsPaused, createdAt) — create UserController or add to AuthController in `src/main/java/com/notifications/controller/UserController.java`
+- [ ] T117 [P] [US9] Create UserProfileResponse DTO with id, email, notificationsPaused, createdAt, gravatarUrl (computed from email MD5 hash → `https://www.gravatar.com/avatar/{md5}?d=identicon&s=80`) in `src/main/java/com/notifications/dto/response/UserProfileResponse.java`
+
+#### Frontend
+
+- [ ] T118 [US9] Create `user` API service with `getProfile()` calling GET `/api/v1/users/me` in `frontend/src/api/user.js`
+- [ ] T119 [US9] Update AuthContext to fetch and cache user profile on login/page load — store `user` object (email, gravatarUrl) in context state, provide `user` via context value in `frontend/src/context/AuthContext.jsx`
+- [ ] T120 [US9] Update Sidebar to show user avatar (Gravatar image) and email between the nav links and logout button — use `user` from AuthContext in `frontend/src/components/Sidebar.jsx`
+- [ ] T121 [US9] Create ProfilePage showing user email, avatar (large Gravatar), account creation date, notification pause status toggle in `frontend/src/pages/ProfilePage.jsx`
+- [ ] T122 [US9] Add `/profile` route to App.jsx (protected) and add Profile link to Sidebar navigation in `frontend/src/App.jsx` and `frontend/src/components/Sidebar.jsx`
+
+**Checkpoint**: User identity visible in sidebar, profile page accessible
+
+---
+
+### User Story 10 — Gmail API Test User Configuration (Priority: P2) 🆕
+
+**Goal**: Provide a way to add test users to the Gmail API OAuth consent screen so other team members can test the OAuth flow without being blocked by Google's "app not verified" restrictions
+
+**Independent Test**: Follow the documented steps to add a test user in Google Cloud Console, then verify that user can complete the Gmail OAuth2 connect flow successfully
+
+- [ ] T123 [US10] Add "Adding Test Users" section to quickstart.md documenting: (1) Navigate to Google Cloud Console → APIs & Services → OAuth consent screen → Test users, (2) Click "Add users", (3) Enter the Gmail address of the test user, (4) Save — the test user can now complete the OAuth consent flow for unverified apps in `specs/001-email-scan-notify/quickstart.md`
+- [ ] T124 [P] [US10] Add a developer-facing info banner on EmailAccountsPage that shows when no email accounts are connected, explaining: "Your Google Cloud project may be in 'Testing' mode. Only test users added in the OAuth consent screen can connect. See quickstart.md for setup." in `frontend/src/pages/EmailAccountsPage.jsx`
+
+**Checkpoint**: Test user setup documented, developer-facing guidance shown in UI
 
 ---
 
@@ -199,375 +249,96 @@
 
 ### Phase Dependencies
 
-- **Setup (Phase 1)**: No dependencies — can start immediately
-- **Foundational (Phase 2)**: Depends on Setup (T001) — BLOCKS all user stories
-- **User Story 1 (Phase 3)**: Depends on Phase 2 completion (entities, repos, auth, config)
-- **User Story 2 (Phase 4)**: Depends on Phase 2 + Phase 3 (needs EmailAccount to exist)
-- **User Story 3 (Phase 5)**: Depends on Phase 2 only — can run in PARALLEL with US1
-- **User Story 4 (Phase 6)**: Depends on Phase 3 (extends EmailAccountService)
-- **User Story 5 (Phase 7)**: Depends on Phase 4 (integrates into EmailScannerServiceImpl)
-- **Polish (Phase 8)**: Depends on Phases 3-7 being substantially complete
+- **Phases 1–9**: ✅ Complete
+- **Phase 10 (UX Improvements)**: Can start immediately — all backend/frontend infrastructure exists
 
-### User Story Dependencies
+### User Story Dependencies (Phase 10)
 
 ```
-Phase 1 (Setup)
-    └── Phase 2 (Foundational) ← BLOCKS ALL
-            ├── Phase 3 (US1: Connect Email) ──┐
-            │       └── Phase 4 (US2: Scan & Notify) ──┐
-            │               └── Phase 7 (US5: Filtering)│
-            ├── Phase 5 (US3: Channels) ────────────────┤ (parallel with US1)
-            └── Phase 6 (US4: Pause/Resume) ────────────┘ (after US1)
-                                                         └── Phase 8 (Polish)
+Phase 10: UX Improvements (all can start in parallel)
+    ├── US6 (Edit Channels): T097–T099 — independent, frontend + minor backend
+    ├── US7 (Forgot Password): T100–T110 — independent, full-stack
+    │       T100 (migration) → T101 (entity) → T102 (repo) → T103–T104 (service) → T105 (controller)
+    │       T106–T110 (frontend) can start in parallel after T105
+    ├── US8 (Error Handling): T111–T115 — independent, frontend-only
+    │       T111 + T112 first → T113 depends on T112 → T114, T115 parallel
+    ├── US9 (Profile & Avatar): T116–T122 — independent, full-stack
+    │       T116–T117 (backend) → T118–T122 (frontend sequential)
+    └── US10 (Gmail Test Users): T123–T124 — independent, docs + frontend
 ```
 
-### Within Each User Story
+### Parallel Opportunities (Phase 10)
 
-- Interfaces before implementations
-- Services before controllers
-- Config/properties alongside service that consumes them
-- Integration tasks (e.g., T064) last within each story
+- **All 5 user stories** (US6–US10) can run **fully in parallel** — they touch different files and features
+- **Within US7**: Backend (T100–T105) and frontend (T106–T110) are sequential within each track, but frontend can start T106 in parallel with backend
+- **Within US8**: T111 + T112 parallel, then T113–T115 parallel after T112 completes
+- **Within US9**: T116 + T117 parallel (backend), then T118–T122 sequential (frontend)
+- **US6 + US10**: Quickest wins — 2–3 tasks each, can complete first
 
 ---
 
-## Parallel Examples
+## Parallel Example: Phase 10
 
-### Phase 2 Parallel Groups
-
-```text
-# Group A — Migrations (all parallel after T008):
-T009, T010, T011, T012
-
-# Group B — Entities (all parallel after T008):
-T013, T014, T015, T016, T017
-
-# Group C — Repositories (all parallel after entities):
-T018, T019, T020, T021, T022
-
-# Group D — Config (all parallel, no inter-dependencies):
-T023, T026, T027, T028, T029, T030, T031
-
-# Group E — DTOs/Mappers (parallel with Group D):
-T032, T033
 ```
-
-### Cross-Story Parallelism
-
-```text
-# After Phase 2 completes, these can proceed simultaneously:
-Developer A: Phase 3 (US1) → T037, T038, T039, T040, T041
-Developer B: Phase 5 (US3) → T055, T056, T057
-```
-
-### Phase 8 Parallel Tasks
-
-```text
-# All Polish tasks are independent:
-T065, T066, T067, T068
+# Launch all 5 user stories simultaneously (different files, independent):
+Stream 1 (US6): T097 → T098 → T099  (Edit Channels — 3 tasks)
+Stream 2 (US7): T100 → T101 → T102 → T103 → T104 → T105 | T106–T110  (Forgot Password — 11 tasks)
+Stream 3 (US8): T111 + T112 → T113 + T114 + T115  (Error Handling — 5 tasks)
+Stream 4 (US9): T116 + T117 → T118 → T119 → T120 → T121 → T122  (Profile — 7 tasks)
+Stream 5 (US10): T123 + T124  (Gmail Test Users — 2 tasks)
 ```
 
 ---
 
 ## Implementation Strategy
 
-### MVP First (US1 + US2)
+### Completed (Phases 1–9)
 
-1. Complete Phase 1: Setup (T001–T007)
-2. Complete Phase 2: Foundational (T008–T036)
-3. Complete Phase 3: US1 — Connect Email (T037–T041)
-4. Complete Phase 4: US2 — Scan & Notify (T042–T054)
-5. **STOP and VALIDATE**: Connect Gmail → send test email → verify Slack/WhatsApp notification
-6. Deploy/demo if ready — this is the core product
+1. ✅ Setup + Foundational → Foundation ready
+2. ✅ User Stories 1–5 → All backend features complete
+3. ✅ Frontend → All pages and routing complete
+4. ✅ Polish → Batching, retention, health checks
 
-### Incremental Delivery
+### Phase 10: UX Improvements (Current Sprint)
 
-1. Setup + Foundational → Foundation ready
-2. Add US1 → Connect Gmail accounts → Deploy/Demo (foundation)
-3. Add US2 → Scan & deliver notifications → Deploy/Demo (MVP!)
-4. Add US3 → Channel management CRUD → Deploy/Demo
-5. Add US4 → Pause/resume scanning → Deploy/Demo
-6. Add US5 → Filtering rules → Deploy/Demo
-7. Polish → Batching, retry, observability → Deploy/Demo (production-ready)
+**Recommended order by impact:**
 
-### Single Developer Strategy
+1. **US8 (Error Handling & Auto-Signout)** — Fixes the most visible UX pain (403 errors, bad messages)
+2. **US6 (Edit Channels)** — Quick win, 3 tasks, high user impact
+3. **US7 (Forgot Password)** — Complete auth flow, 11 tasks
+4. **US9 (Profile & Avatar)** — User identity and personalization
+5. **US10 (Gmail Test Users)** — Documentation and onboarding
 
-1. Phases 1-2 sequentially (foundation — ~T001-T036)
-2. Phase 3 (US1) → validate Gmail OAuth2 flow works
-3. Phase 4 (US2) → validate end-to-end notification delivery
-4. Phase 5 (US3) → channel management
-5. Phase 6 (US4) → pause/resume
-6. Phase 7 (US5) → filtering
-7. Phase 8 → polish and production readiness
+**All can run in parallel if multiple developers available.**
+
+---
+
+## Summary
+
+| Phase | Tasks | Status |
+|-------|-------|--------|
+| Phase 1: Setup | T001–T008 (8) | ✅ Done |
+| Phase 2: Foundational | T009–T041 (33) | ✅ Done |
+| Phase 3: US1 Connect Email | T042–T048 (7) | ✅ Done |
+| Phase 4: US2 Notifications | T049–T059 (11) | ✅ Done |
+| Phase 5: US3 Channels | T060–T062 (3) | ✅ Done |
+| Phase 6: US4 Pause/Resume | T063–T065 (3) | ✅ Done |
+| Phase 7: US5 Filtering | T066–T069 (4) | ✅ Done |
+| Phase 8: Frontend | T070–T090 (21) | ✅ Done |
+| Phase 9: Polish | T091–T096 (6) | ✅ Done |
+| **Phase 10: UX Improvements** | **T097–T124 (28)** | **🆕 New** |
+| **Total** | **124 tasks** | **96 done, 28 new** |
 
 ---
 
 ## Notes
 
-- [P] tasks = different files, no dependencies — safe to parallelize
-- [USx] label maps task to specific user story for traceability
-- Total tasks: 68 (7 setup + 29 foundational + 5 US1 + 13 US2 + 3 US3 + 3 US4 + 4 US5 + 4 polish)
-- No test tasks included per user request
+- [P] tasks = different files, no dependencies on incomplete tasks
+- [Story] label maps task to specific user story for traceability
+- Each user story is independently completable and testable
 - Commit after each task or logical group
 - Stop at any checkpoint to validate the story independently
-
----
-
-## How It Works — End-to-End Usage Flow
-
-### Architecture Overview
-
-```
-┌──────────────┐     ┌───────────────────────────────────┐     ┌──────────────┐
-│   User's     │     │   Email Scan & Notify Service      │     │  Notification │
-│   Gmail      │◄───►│                                   │────►│  Channels     │
-│   Inbox      │     │  ┌─────────┐  ┌──────────────┐   │     │               │
-└──────────────┘     │  │Scheduler│─►│Email Scanner  │   │     │  ┌─────────┐  │
-                     │  │(60s)    │  │(Gmail API)    │   │     │  │  Slack  │  │
-┌──────────────┐     │  └─────────┘  └──────┬───────┘   │     │  └─────────┘  │
-│  PostgreSQL  │◄───►│                      │           │     │               │
-│  (Users,     │     │  ┌───────────┐  ┌────▼────────┐  │     │  ┌─────────┐  │
-│   Accounts,  │     │  │Dedup      │◄─┤Notification │──┼────►│  │WhatsApp │  │
-│   Channels)  │     │  │(Redis SET)│  │Dispatcher   │  │     │  └─────────┘  │
-└──────────────┘     │  └───────────┘  └─────────────┘  │     └──────────────┘
-                     │                                   │
-┌──────────────┐     │  ┌────────────────────────────┐  │
-│    Redis     │◄───►│  │  Resilience4j              │  │
-│  (Dedup,     │     │  │  Circuit Breaker + Rate     │  │
-│   Caching)   │     │  │  Limiter on all ext. calls  │  │
-└──────────────┘     │  └────────────────────────────┘  │
-                     └───────────────────────────────────┘
-```
-
-### Step-by-Step Usage Flow
-
-#### Step 1 — Register & Login
-
-```bash
-# 1a. Create an account
-curl -s -X POST http://localhost:8080/api/v1/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{"email": "you@example.com", "password": "MySecurePass123!"}' | jq
-
-# Response: { "accessToken": "eyJ...", "refreshToken": "eyJ...", "expiresIn": 900 }
-
-# 1b. Save the token for all subsequent requests
-export TOKEN="<accessToken-from-response>"
-
-# 1c. (Later) Login again if token expires
-curl -s -X POST http://localhost:8080/api/v1/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email": "you@example.com", "password": "MySecurePass123!"}' | jq
-
-# 1d. Refresh token when access token expires (every 15 min)
-curl -s -X POST http://localhost:8080/api/v1/auth/refresh \
-  -H "Content-Type: application/json" \
-  -d '{"refreshToken": "<your-refresh-token>"}' | jq
-```
-
-#### Step 2 — Connect Gmail Account (OAuth2)
-
-**Prerequisites**: Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `application-dev.yml`
-(from Google Cloud Console → APIs & Services → Credentials → OAuth 2.0 Client ID).
-Add `http://localhost:8080/api/v1/email-accounts/callback` as Authorized Redirect URI.
-
-```bash
-# 2a. Initiate Gmail OAuth2 connection
-curl -s -X POST http://localhost:8080/api/v1/email-accounts/connect \
-  -H "Authorization: Bearer $TOKEN" | jq
-
-# Response: { "authorizationUrl": "https://accounts.google.com/o/oauth2/v2/auth?..." }
-
-# 2b. Open the authorizationUrl in your browser
-#     → Log in with your Google account
-#     → Grant "View your email messages" permission
-#     → Google redirects to /callback → account is now ACTIVE
-
-# 2c. Verify your connected accounts
-curl -s http://localhost:8080/api/v1/email-accounts \
-  -H "Authorization: Bearer $TOKEN" | jq
-
-# Response: [{ "id": "uuid", "emailAddress": "you@gmail.com", "status": "active", ... }]
-```
-
-**What happens behind the scenes**:
-1. Server generates Google OAuth2 consent URL with `gmail.readonly` scope
-2. User authorizes → Google sends auth code to `/callback`
-3. Server exchanges auth code for access+refresh tokens
-4. Tokens are encrypted (AES-256-GCM) and stored in PostgreSQL
-5. Account status set to `active` → scheduler starts scanning
-
-#### Step 3 — Add Notification Channel (Slack / WhatsApp / Both)
-
-```bash
-# 3a. Add Slack channel
-curl -s -X POST http://localhost:8080/api/v1/notification-channels \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "channelType": "slack",
-    "botToken": "xoxb-your-slack-bot-token",
-    "slackChannelId": "C0123456789"
-  }' | jq
-
-# 3b. Add WhatsApp channel
-curl -s -X POST http://localhost:8080/api/v1/notification-channels \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "channelType": "whatsapp",
-    "whatsappPhoneNumber": "+1234567890",
-    "consentGiven": true
-  }' | jq
-
-# 3c. List your channels
-curl -s http://localhost:8080/api/v1/notification-channels \
-  -H "Authorization: Bearer $TOKEN" | jq
-```
-
-**Where to get credentials**:
-- **Slack**: Create app at https://api.slack.com/apps → OAuth & Permissions → Bot Token (`xoxb-...`)
-- **WhatsApp**: Sign up at https://www.twilio.com → WhatsApp Sandbox → get SID + Auth Token
-
-#### Step 4 — Automatic Scanning & Notifications (Happens Automatically!)
-
-Once Steps 2 & 3 are complete, the system runs automatically:
-
-```
-Every 60 seconds:
-  ┌────────────────────────────────────────────────────────┐
-  │ EmailScanScheduler runs                                │
-  │  ├─ Finds all ACTIVE email accounts                    │
-  │  ├─ For each account:                                  │
-  │  │   ├─ Calls Gmail API (history.list since last scan) │
-  │  │   │   └─ Protected by @CircuitBreaker("gmail")      │
-  │  │   │   └─ Protected by @RateLimiter("gmail-api")     │
-  │  │   ├─ For each new email found:                      │
-  │  │   │   ├─ Dedup check (Redis SET, 48h TTL)           │
-  │  │   │   ├─ Filter check (matches sender/subject?)     │
-  │  │   │   └─ If passes → NotificationDispatcher         │
-  │  │   └─ Updates lastScannedAt + historyId              │
-  │  └─ Flushes any batch windows (10+ emails → summary)   │
-  │                                                        │
-  │ NotificationDispatcher:                                │
-  │  ├─ Finds user's active channels                       │
-  │  ├─ For each channel:                                  │
-  │  │   ├─ SlackNotificationSender.send()                 │
-  │  │   │   └─ @CircuitBreaker("slack")                   │
-  │  │   │   └─ @RateLimiter("slack-api") → 1 msg/sec     │
-  │  │   └─ WhatsAppNotificationSender.send()              │
-  │  │       └─ @CircuitBreaker("whatsapp")                │
-  │  │       └─ @RateLimiter("whatsapp-api") → 50/sec     │
-  │  └─ Saves Notification record (status: sent/failed)    │
-  │                                                        │
-  │ Failed notifications → RetryScheduler:                 │
-  │  └─ Exponential backoff: 30s × 2^retryCount (max 3)   │
-  └────────────────────────────────────────────────────────┘
-```
-
-**Notification message format** (sent to Slack/WhatsApp):
-```
-📧 New Email
-From: John Smith <john@company.com>
-Subject: Q4 Budget Review
-Preview: Hi team, please find attached the Q4 budget review document for...
-```
-
-#### Step 5 — (Optional) Set Up Filter Rules
-
-Only get notified for emails that matter:
-
-```bash
-# 5a. Filter: Only notify for emails from your boss
-curl -s -X POST http://localhost:8080/api/v1/filter-rules \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "ruleType": "sender",
-    "pattern": "boss@company.com",
-    "active": true,
-    "priority": 1
-  }' | jq
-
-# 5b. Filter: Only notify for "urgent" subject lines
-curl -s -X POST http://localhost:8080/api/v1/filter-rules \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "ruleType": "subject_keyword",
-    "pattern": "urgent",
-    "active": true,
-    "priority": 2
-  }' | jq
-
-# 5c. List your filter rules
-curl -s http://localhost:8080/api/v1/filter-rules \
-  -H "Authorization: Bearer $TOKEN" | jq
-```
-
-**Filter behavior**: If you have ANY active filter rules, only matching emails trigger notifications. If you have NO filter rules, ALL new emails trigger notifications.
-
-#### Step 6 — (Optional) Pause / Resume Scanning
-
-```bash
-# Get your email account ID first
-export ACCOUNT_ID="<id-from-step-2c>"
-
-# Pause (e.g., going on vacation)
-curl -s -X PATCH http://localhost:8080/api/v1/email-accounts/$ACCOUNT_ID/pause \
-  -H "Authorization: Bearer $TOKEN" | jq
-
-# Resume
-curl -s -X PATCH http://localhost:8080/api/v1/email-accounts/$ACCOUNT_ID/resume \
-  -H "Authorization: Bearer $TOKEN" | jq
-```
-
-#### Step 7 — View Notification History
-
-```bash
-curl -s "http://localhost:8080/api/v1/notifications?page=0&size=20" \
-  -H "Authorization: Bearer $TOKEN" | jq
-```
-
-### API Quick Reference
-
-| Method | Endpoint | Auth? | Description |
-|--------|----------|-------|-------------|
-| POST | `/api/v1/auth/register` | No | Create account |
-| POST | `/api/v1/auth/login` | No | Login, get JWT |
-| POST | `/api/v1/auth/refresh` | No | Refresh JWT |
-| POST | `/api/v1/email-accounts/connect` | Yes | Start Gmail OAuth2 |
-| GET | `/api/v1/email-accounts/callback` | No | OAuth2 callback (auto) |
-| GET | `/api/v1/email-accounts` | Yes | List email accounts |
-| GET | `/api/v1/email-accounts/{id}` | Yes | Get account details |
-| PATCH | `/api/v1/email-accounts/{id}/pause` | Yes | Pause scanning |
-| PATCH | `/api/v1/email-accounts/{id}/resume` | Yes | Resume scanning |
-| DELETE | `/api/v1/email-accounts/{id}` | Yes | Disconnect account |
-| POST | `/api/v1/notification-channels` | Yes | Add Slack/WhatsApp |
-| GET | `/api/v1/notification-channels` | Yes | List channels |
-| PATCH | `/api/v1/notification-channels/{id}` | Yes | Update channel |
-| DELETE | `/api/v1/notification-channels/{id}` | Yes | Remove channel |
-| POST | `/api/v1/filter-rules` | Yes | Create filter rule |
-| GET | `/api/v1/filter-rules` | Yes | List filter rules |
-| PUT | `/api/v1/filter-rules/{id}` | Yes | Update filter rule |
-| DELETE | `/api/v1/filter-rules/{id}` | Yes | Delete filter rule |
-| GET | `/api/v1/notifications` | Yes | Notification history |
-| GET | `/actuator/health` | No | Health check |
-| GET | `/swagger-ui/index.html` | No | Swagger UI (interactive) |
-
-### Resilience Patterns Summary
-
-| External API | Circuit Breaker | Rate Limiter | Retry |
-|-------------|----------------|-------------|-------|
-| Gmail API | Window=20, 50% fail, 60s wait | 200 req/sec | On scan failure |
-| Slack API | Window=15, 50% fail, 20s wait | 1 msg/sec | 3× exponential backoff |
-| WhatsApp (Twilio) | Window=20, 50% fail, 45s wait | 50 req/sec | 3× exponential backoff |
-
-### Required External Setup
-
-| Service | What You Need | Where To Get It |
-|---------|---------------|-----------------|
-| **Google Cloud** | OAuth2 Client ID + Secret | [console.cloud.google.com](https://console.cloud.google.com) → APIs & Services → Credentials |
-| **Gmail API** | Enable API | Google Cloud Console → Library → Gmail API → Enable |
-| **Slack** | Bot Token (`xoxb-...`) | [api.slack.com/apps](https://api.slack.com/apps) → Create App → OAuth |
-| **Twilio** | Account SID + Auth Token | [twilio.com/console](https://www.twilio.com/console) |
-| **WhatsApp** | Twilio WhatsApp Sandbox | Twilio Console → Messaging → WhatsApp |
+- Resilience4j annotations (@CircuitBreaker, @RateLimiter) must be on every external API call
+- All sensitive data (OAuth tokens, bot tokens) encrypted at rest via EncryptionConverter
+- Rate limit headers (X-RateLimit-Limit/Remaining/Reset) on all API responses
+- Phase 10 tasks reference existing files — verify current code before modifying

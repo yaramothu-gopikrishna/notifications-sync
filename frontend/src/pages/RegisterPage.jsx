@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Mail } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { getErrorMessage } from '../utils/errorUtils';
 
 export default function RegisterPage() {
   const [email, setEmail] = useState('');
@@ -23,7 +24,7 @@ export default function RegisterPage() {
       toast.success('Account created!');
       navigate('/');
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Registration failed');
+      toast.error(getErrorMessage(err));
     } finally {
       setLoading(false);
     }
