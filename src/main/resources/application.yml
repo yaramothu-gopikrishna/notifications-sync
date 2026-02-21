@@ -1,0 +1,121 @@
+server:
+  port: 8080
+
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/notifications_dev
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
+app:
+  jwt:
+    secret: ${JWT_SECRET:default-dev-secret-change-in-production-must-be-256-bits}
+    access-token-expiry: 900000       # 15 minutes
+    refresh-token-expiry: 604800000   # 7 days
+  encryption:
+    key: ${ENCRYPTION_KEY:}
+
+gmail:
+  oauth2:
+    client-id: ${GOOGLE_CLIENT_ID:}
+    client-secret: ${GOOGLE_CLIENT_SECRET:}
+    redirect-uri: http://localhost:8080/api/v1/email-accounts/callback
+    scopes: https://www.googleapis.com/auth/gmail.readonly
+    auth-uri: https://accounts.google.com/o/oauth2/v2/auth
+    token-uri: https://oauth2.googleapis.com/token
+  scan:
+    interval: 60000   # 1 minute
+
+slack:
+  bot-token: ${SLACK_BOT_TOKEN:}
+
+twilio:
+  account-sid: ${TWILIO_ACCOUNT_SID:}
+  auth-token: ${TWILIO_AUTH_TOKEN:}
+  whatsapp:
+    from-number: ${TWILIO_WHATSAPP_FROM:whatsapp:+14155238886}
+
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        register-health-indicator: true
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        failure-rate-threshold: 50
+        slow-call-rate-threshold: 80
+        slow-call-duration-threshold: 5s
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 5
+        automatic-transition-from-open-to-half-open-enabled: true
+    instances:
+      gmail:
+        base-config: default
+        slow-call-duration-threshold: 8s
+        wait-duration-in-open-state: 60s
+      slack:
+        base-config: default
+        sliding-window-size: 15
+        wait-duration-in-open-state: 20s
+      whatsapp:
+        base-config: default
+        wait-duration-in-open-state: 45s
+  ratelimiter:
+    instances:
+      gmail-api:
+        limit-for-period: 200
+        limit-refresh-period: 1s
+        timeout-duration: 2s
+      slack-api:
+        limit-for-period: 1
+        limit-refresh-period: 1s
+        timeout-duration: 5s
+      whatsapp-api:
+        limit-for-period: 50
+        limit-refresh-period: 1s
+        timeout-duration: 3s
+      inbound-api:
+        limit-for-period: 100
+        limit-refresh-period: 1s
+        timeout-duration: 0s
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,circuitbreakers,ratelimiters
+  health:
+    circuitbreakers:
+      enabled: true
+
+logging:
+  level:
+    com.notifications: INFO
+    org.springframework.security: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+
+notification:
+  batching:
+    window-duration: 60000   # 1 minute
+    batch-threshold: 10
+    max-batch-size: 100
+    summary-display-limit: 5

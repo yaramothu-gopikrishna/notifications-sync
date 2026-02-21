@@ -1,0 +1,1108 @@
+openapi: 3.1.0
+info:
+  title: Email Scan & Notify API
+  description: |
+    REST API for the Email Scan & Notify service.
+    Connects to Gmail via OAuth2, scans emails in the background,
+    and delivers notifications to Slack and/or WhatsApp channels.
+  version: 1.0.0
+  contact:
+    name: Engineering Team
+
+servers:
+  - url: http://localhost:8080
+    description: Local development
+  - url: https://api.example.com
+    description: Production
+
+tags:
+  - name: Auth
+    description: User registration and authentication (FR-001)
+  - name: Email Accounts
+    description: Connect, manage, and disconnect email accounts (FR-002, FR-007, FR-011, FR-012)
+  - name: Notification Channels
+    description: Configure Slack and WhatsApp channels (FR-006)
+  - name: Filter Rules
+    description: CRUD filter rules for email matching (FR-008)
+  - name: Notifications
+    description: Read-only notification history
+
+# ---------------------------------------------------------------------------
+# Security
+# ---------------------------------------------------------------------------
+security:
+  - BearerAuth: []
+
+# ---------------------------------------------------------------------------
+# Paths
+# ---------------------------------------------------------------------------
+paths:
+  # ---- Auth ---------------------------------------------------------------
+  /api/v1/auth/register:
+    post:
+      operationId: registerUser
+      tags: [Auth]
+      summary: Register a new user
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "201":
+          description: User created
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthTokenResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/auth/login:
+    post:
+      operationId: loginUser
+      tags: [Auth]
+      summary: Authenticate and obtain JWT tokens
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Login successful
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthTokenResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/auth/refresh:
+    post:
+      operationId: refreshToken
+      tags: [Auth]
+      summary: Refresh an expired access token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshTokenRequest"
+      responses:
+        "200":
+          description: Tokens refreshed
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthTokenResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ---- Email Accounts -----------------------------------------------------
+  /api/v1/email-accounts/connect:
+    post:
+      operationId: connectEmailAccount
+      tags: [Email Accounts]
+      summary: Initiate Gmail OAuth2 flow
+      description: Returns a redirect URL the client must open to authorize Gmail access.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConnectEmailRequest"
+      responses:
+        "200":
+          description: OAuth2 authorization URL returned
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OAuthRedirectResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/email-accounts/callback:
+    get:
+      operationId: emailOAuthCallback
+      tags: [Email Accounts]
+      summary: OAuth2 callback — exchange authorization code for tokens
+      security: []
+      parameters:
+        - name: code
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Authorization code from Gmail OAuth2
+        - name: state
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Opaque state parameter for CSRF protection
+      responses:
+        "200":
+          description: Email account connected successfully
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmailAccount"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/email-accounts:
+    get:
+      operationId: listEmailAccounts
+      tags: [Email Accounts]
+      summary: List connected email accounts
+      responses:
+        "200":
+          description: List of email accounts
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/EmailAccount"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/email-accounts/{id}:
+    get:
+      operationId: getEmailAccount
+      tags: [Email Accounts]
+      summary: Get email account details and connection status
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: Email account details
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmailAccount"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      operationId: disconnectEmailAccount
+      tags: [Email Accounts]
+      summary: Disconnect and delete an email account
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "204":
+          description: Email account disconnected and deleted
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/email-accounts/{id}/pause:
+    patch:
+      operationId: pauseEmailScanning
+      tags: [Email Accounts]
+      summary: Pause email scanning for an account
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: Scanning paused
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmailAccount"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/email-accounts/{id}/resume:
+    patch:
+      operationId: resumeEmailScanning
+      tags: [Email Accounts]
+      summary: Resume email scanning for an account
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: Scanning resumed
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmailAccount"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ---- Notification Channels ----------------------------------------------
+  /api/v1/notification-channels:
+    post:
+      operationId: addNotificationChannel
+      tags: [Notification Channels]
+      summary: Add a notification channel (Slack or WhatsApp)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateNotificationChannelRequest"
+      responses:
+        "201":
+          description: Channel created
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationChannel"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    get:
+      operationId: listNotificationChannels
+      tags: [Notification Channels]
+      summary: List configured notification channels
+      responses:
+        "200":
+          description: List of channels
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/NotificationChannel"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/notification-channels/{id}:
+    patch:
+      operationId: updateNotificationChannel
+      tags: [Notification Channels]
+      summary: Update a notification channel configuration
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateNotificationChannelRequest"
+      responses:
+        "200":
+          description: Channel updated
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationChannel"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      operationId: deleteNotificationChannel
+      tags: [Notification Channels]
+      summary: Remove a notification channel
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "204":
+          description: Channel deleted
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ---- Filter Rules -------------------------------------------------------
+  /api/v1/filter-rules:
+    post:
+      operationId: createFilterRule
+      tags: [Filter Rules]
+      summary: Create a filter rule for email matching
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateFilterRuleRequest"
+      responses:
+        "201":
+          description: Filter rule created
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FilterRule"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    get:
+      operationId: listFilterRules
+      tags: [Filter Rules]
+      summary: List all filter rules
+      responses:
+        "200":
+          description: List of filter rules
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/FilterRule"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/filter-rules/{id}:
+    put:
+      operationId: updateFilterRule
+      tags: [Filter Rules]
+      summary: Replace a filter rule
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateFilterRuleRequest"
+      responses:
+        "200":
+          description: Filter rule updated
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FilterRule"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      operationId: deleteFilterRule
+      tags: [Filter Rules]
+      summary: Delete a filter rule
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "204":
+          description: Filter rule deleted
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ---- Notifications (read-only history) ----------------------------------
+  /api/v1/notifications:
+    get:
+      operationId: listNotifications
+      tags: [Notifications]
+      summary: List notification history (paginated, last 30 days)
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: channel_type
+          in: query
+          description: Filter by channel type
+          schema:
+            $ref: "#/components/schemas/ChannelType"
+        - name: status
+          in: query
+          description: Filter by delivery status
+          schema:
+            $ref: "#/components/schemas/NotificationStatus"
+      responses:
+        "200":
+          description: Paginated notification history
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+# ---------------------------------------------------------------------------
+# Components
+# ---------------------------------------------------------------------------
+components:
+  # ---- Security Schemes ---------------------------------------------------
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  # ---- Reusable Parameters ------------------------------------------------
+  parameters:
+    ResourceId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Unique resource identifier
+
+  # ---- Reusable Headers ---------------------------------------------------
+  headers:
+    X-RateLimit-Limit:
+      description: Maximum number of requests allowed in the current window
+      schema:
+        type: integer
+    X-RateLimit-Remaining:
+      description: Number of requests remaining in the current window
+      schema:
+        type: integer
+    X-RateLimit-Reset:
+      description: Unix epoch timestamp when the rate-limit window resets
+      schema:
+        type: integer
+
+  # ---- Reusable Responses -------------------------------------------------
+  responses:
+    BadRequest:
+      description: Invalid request payload or parameters
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Unauthorized:
+      description: Missing or invalid authentication credentials
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Forbidden:
+      description: Insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    TooManyRequests:
+      description: Rate limit exceeded
+      headers:
+        X-RateLimit-Limit:
+          $ref: "#/components/headers/X-RateLimit-Limit"
+        X-RateLimit-Remaining:
+          $ref: "#/components/headers/X-RateLimit-Remaining"
+        X-RateLimit-Reset:
+          $ref: "#/components/headers/X-RateLimit-Reset"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    InternalError:
+      description: Unexpected server error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+  # ---- Schemas ------------------------------------------------------------
+  schemas:
+    # -- Shared enums / primitives ------------------------------------------
+    ChannelType:
+      type: string
+      enum: [slack, whatsapp]
+
+    NotificationStatus:
+      type: string
+      enum: [delivered, failed, pending]
+
+    EmailAccountStatus:
+      type: string
+      enum: [active, paused, error, disconnected]
+
+    FilterField:
+      type: string
+      enum: [from, to, subject, body, label]
+      description: Email field to match against
+
+    FilterOperator:
+      type: string
+      enum: [contains, equals, starts_with, ends_with, regex]
+
+    # -- Error --------------------------------------------------------------
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              examples: ["VALIDATION_ERROR"]
+            message:
+              type: string
+              description: Human-readable error description
+              examples: ["Email address is required"]
+            details:
+              type: object
+              additionalProperties: true
+              description: Optional structured details
+
+    # -- Pagination ---------------------------------------------------------
+    PaginationMeta:
+      type: object
+      required: [page, per_page, total, total_pages]
+      properties:
+        page:
+          type: integer
+        per_page:
+          type: integer
+        total:
+          type: integer
+        total_pages:
+          type: integer
+
+    # -- Auth ---------------------------------------------------------------
+    RegisterRequest:
+      type: object
+      required: [email, password, name]
+      properties:
+        email:
+          type: string
+          format: email
+          examples: ["user@example.com"]
+        password:
+          type: string
+          format: password
+          minLength: 8
+          examples: ["S3cur3P@ss!"]
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+          examples: ["Jane Doe"]
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+
+    RefreshTokenRequest:
+      type: object
+      required: [refresh_token]
+      properties:
+        refresh_token:
+          type: string
+
+    AuthTokenResponse:
+      type: object
+      required: [access_token, refresh_token, expires_in, token_type]
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+        expires_in:
+          type: integer
+          description: Access token lifetime in seconds
+          examples: [3600]
+        token_type:
+          type: string
+          const: Bearer
+
+    # -- Email Accounts -----------------------------------------------------
+    ConnectEmailRequest:
+      type: object
+      required: [provider]
+      properties:
+        provider:
+          type: string
+          enum: [gmail]
+          description: Email provider to connect
+        redirect_uri:
+          type: string
+          format: uri
+          description: Client redirect URI after OAuth2 consent
+
+    OAuthRedirectResponse:
+      type: object
+      required: [authorization_url, state]
+      properties:
+        authorization_url:
+          type: string
+          format: uri
+          description: URL to redirect the user to for OAuth2 consent
+        state:
+          type: string
+          description: Opaque state value for CSRF verification
+
+    EmailAccount:
+      type: object
+      required: [id, email, provider, status, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        provider:
+          type: string
+          enum: [gmail]
+        status:
+          $ref: "#/components/schemas/EmailAccountStatus"
+        last_synced_at:
+          type: string
+          format: date-time
+          description: Timestamp of the last successful sync
+        error_message:
+          type: string
+          description: Present only when status is "error"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    # -- Notification Channels ----------------------------------------------
+    CreateNotificationChannelRequest:
+      type: object
+      required: [type, config]
+      properties:
+        type:
+          $ref: "#/components/schemas/ChannelType"
+        label:
+          type: string
+          maxLength: 128
+          description: Human-friendly label for the channel
+        config:
+          $ref: "#/components/schemas/ChannelConfig"
+
+    UpdateNotificationChannelRequest:
+      type: object
+      properties:
+        label:
+          type: string
+          maxLength: 128
+        config:
+          $ref: "#/components/schemas/ChannelConfig"
+        enabled:
+          type: boolean
+
+    ChannelConfig:
+      type: object
+      description: Configuration varies by channel type
+      properties:
+        slack_webhook_url:
+          type: string
+          format: uri
+          description: Required when type is "slack"
+        slack_channel:
+          type: string
+          description: Optional Slack channel override
+        whatsapp_phone_number:
+          type: string
+          description: Required when type is "whatsapp" (E.164 format)
+          examples: ["+14155551234"]
+
+    NotificationChannel:
+      type: object
+      required: [id, type, enabled, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          $ref: "#/components/schemas/ChannelType"
+        label:
+          type: string
+        config:
+          $ref: "#/components/schemas/ChannelConfig"
+        enabled:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    # -- Filter Rules -------------------------------------------------------
+    CreateFilterRuleRequest:
+      type: object
+      required: [name, conditions]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 256
+          examples: ["VIP Sender Alert"]
+        description:
+          type: string
+          maxLength: 1024
+        conditions:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/FilterCondition"
+          description: All conditions are ANDed together
+        channel_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: >
+            Notification channel IDs to route matching emails to.
+            If empty, all enabled channels are used.
+        enabled:
+          type: boolean
+          default: true
+        priority:
+          type: integer
+          minimum: 0
+          default: 0
+          description: Higher value = higher priority
+
+    FilterCondition:
+      type: object
+      required: [field, operator, value]
+      properties:
+        field:
+          $ref: "#/components/schemas/FilterField"
+        operator:
+          $ref: "#/components/schemas/FilterOperator"
+        value:
+          type: string
+          examples: ["ceo@company.com"]
+
+    FilterRule:
+      type: object
+      required: [id, name, conditions, enabled, priority, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        conditions:
+          type: array
+          items:
+            $ref: "#/components/schemas/FilterCondition"
+        channel_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        enabled:
+          type: boolean
+        priority:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    # -- Notifications (history) --------------------------------------------
+    NotificationListResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Notification"
+        meta:
+          $ref: "#/components/schemas/PaginationMeta"
+
+    Notification:
+      type: object
+      required: [id, channel_type, status, email_subject, email_from, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        channel_type:
+          $ref: "#/components/schemas/ChannelType"
+        channel_id:
+          type: string
+          format: uuid
+        status:
+          $ref: "#/components/schemas/NotificationStatus"
+        email_subject:
+          type: string
+        email_from:
+          type: string
+          format: email
+        email_received_at:
+          type: string
+          format: date-time
+        filter_rule_id:
+          type: string
+          format: uuid
+          description: Filter rule that triggered this notification
+        error_message:
+          type: string
+          description: Present only when status is "failed"
+        created_at:
+          type: string
+          format: date-time

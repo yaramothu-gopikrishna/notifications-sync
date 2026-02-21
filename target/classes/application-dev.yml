@@ -1,0 +1,16 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5433/notifications_dev
+    username: postgres
+    password: postgres
+  jpa:
+    show-sql: true
+  data:
+    redis:
+      host: localhost
+      port: 6380
+
+logging:
+  level:
+    com.notifications: DEBUG
+    org.springframework.security: DEBUG
