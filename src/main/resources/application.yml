@@ -3,12 +3,14 @@ server:
 
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5433/notifications_dev
+    url: ${DATABASE_URL}
     username: ${DB_USERNAME:postgres}
     password: ${DB_PASSWORD:postgres}
     hikari:
       maximum-pool-size: 20
       minimum-idle: 5
+  flyway:
+    url: ${DATABASE_URL}
   jpa:
     hibernate:
       ddl-auto: validate
